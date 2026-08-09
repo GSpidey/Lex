@@ -19,7 +19,8 @@ Environment: isolated Cloudflare staging plus local Windows/physical Android tes
 ## Still gated
 
 - Meta WhatsApp test-number OTP and status delivery require Meta test credentials and an approved authentication template. The API currently returns an explicit unavailable response instead of simulating delivery.
-- OpenAI transcription/extraction, Paystack/Flutterwave sandbox settlement/refunds, push delivery, and email require their test credentials.
+- The OpenAI secret is configured on both Lex staging Workers, but the account currently has no credit. No billed request has been made; transcription remains provider-unverified. Intake extraction/drafting still requires implementation beyond the credential.
+- Paystack/Flutterwave sandbox settlement/refunds, push delivery, and email require their test credentials.
 - Remote R2 matter-access, queue failure/replay, payment-webhook replay, and an isolated D1 Time Travel restore drill remain to be exercised.
 - Pidgin legal copy, seeded legal workflows, pricing, commission treatment, disclosures, and public claims require recorded lawyer-co-founder review.
 - The current Android release uses local test signing. Production signing, iOS signing, a custom domain, production credentials, and public distribution are intentionally absent.

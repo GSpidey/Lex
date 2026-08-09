@@ -11,7 +11,7 @@ Allowed statuses: `not_started`, `implemented_unverified`, `local_verified`, `pr
 | Queues, job ledger, retries, DLQ, Cron | provider_verified      | New queues, consumers, DLQ, and five-minute Cron are deployed; remote failure drill is pending                       |
 | Android client                         | provider_verified      | Fresh Gradle APK installed and launched against the staging API on device `R3CW70E87KD`                              |
 | English/Pidgin questionnaires          | local_verified         | Versioned tenant/landlord questionnaires render in the device build; legal-language review remains pending           |
-| Voice transcription confirmation       | implemented_unverified | Backend adapter exists; end-to-end client flow incomplete                                                            |
+| Voice transcription confirmation       | implemented_unverified | OpenAI secret is configured on both staging Workers; provider call awaits account credit and end-to-end verification |
 | WhatsApp OTP                           | implemented_unverified | Local behavior exists; real Meta template delivery not verified                                                      |
 | Full WhatsApp conversational intake    | not_started            | Deferred roadmap item, not a pilot acceptance requirement                                                            |
 | Lawyer workspace                       | local_verified         | Static production build and live deployment pass; provider-backed full journey remains pending                       |
