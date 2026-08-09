@@ -11,9 +11,9 @@
 
 Lex is a managed legal-access marketplace, not merely a searchable directory or open bidding system.
 
-The client journey is:
+The eventual cross-channel journey is:
 
-1. Describe the problem in a supported language through the app or WhatsApp.
+1. Describe the problem in a supported language through the app.
 2. Complete guided intake and provide evidence.
 3. Confirm the transcript, facts, parties, timeline, and desired outcome.
 4. Receive safe triage and routing with uncertainty and urgent escalation made visible.
@@ -40,7 +40,7 @@ Approved initial uses are intake, transcription, fact extraction, summarization,
 
 AI cannot publish legal opinions, predict outcomes definitively, activate a jurisdiction, select the final lawyer, negotiate, file, represent a client, or label work as lawyer-reviewed. Low-confidence, conflicting, urgent, and unsupported results route to human review.
 
-## MVP contract
+## Controlled-pilot contract
 
 - Adult individual tenants and landlords.
 - Separate tenant-side and landlord-side tenancy workflows.
@@ -48,7 +48,11 @@ AI cannot publish legal opinions, predict outcomes definitively, activate a juri
 - Lawyer-reviewed tenancy assessment delivered within 48 hours after verified payment and complete information.
 - Open lawyer applications, admin verification, and a matched shortlist of 3-5 eligible lawyers.
 - Fixed NGN 10,000 test price with a configurable 20 percent platform / 80 percent lawyer split; lawyer share bears gateway fees.
-- English, Pidgin, Hausa, Yoruba, and Igbo intake; English is the authoritative lawyer record.
-- Android and iOS client code, responsive lawyer/admin web, and full WhatsApp continuity.
+- Android-first client and responsive lawyer/operations web workspace.
+- English and reviewed Pidgin intake; English is the authoritative lawyer record.
+- WhatsApp OTP and status continuity. Full conversational WhatsApp intake and Hausa, Yoruba, and Igbo are deferred.
+- Cloudflare-native synthetic staging with new isolated `lex-staging-*` Workers, D1, R2, Queues, and Cron resources.
+
+The existing NestJS/PostgreSQL/Redis/MinIO implementation is retained as a portability fallback. It is not the active staging runtime.
 
 The lawyer co-founder must approve legal content, engagement formation, commercial structure, privacy, translations, and public claims before public launch.

@@ -28,4 +28,8 @@ Inspect the current project state and preserve existing work. State clearly when
 
 ## Current implementation state
 
-Implementation follows the approved Nigeria MVP plan in `docs/MVP_PLAN.md` and the locked product decisions in `docs/DECISIONS.md`. Keep provider calls in sandbox/test environments until public-launch approvals and production credentials are explicitly supplied.
+Implementation follows the Cloudflare controlled-pilot plan in `docs/MVP_PLAN.md`. The active synthetic staging runtime uses only newly created `lex-staging-*` Workers, D1, R2, Queues, and Cron resources. Never reuse or change a pre-existing Cloudflare resource.
+
+The pilot is Android-first, Lagos service-only, and English/Pidgin. WhatsApp is limited to OTP and status continuity until the deferred conversational phase. The legacy NestJS/PostgreSQL/Redis/MinIO code remains a portability fallback.
+
+Consult `docs/DELIVERY_STATUS.md` and `docs/TEST_REPORT.md` before claiming completion. Keep provider calls in sandbox/test environments until credentials and public-launch approvals are explicitly supplied.

@@ -1,3 +1,8 @@
 import type { NextConfig } from "next";
-const config: NextConfig = { output: "standalone", poweredByHeader: false, reactStrictMode: true };
+const config: NextConfig = {
+  output: "export",
+  poweredByHeader: false,
+  reactStrictMode: true,
+  images: { unoptimized: true },
+};
 export default config;

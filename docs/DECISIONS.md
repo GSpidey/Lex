@@ -1,35 +1,37 @@
 # Decision Register
 
-Approved product decisions are implementation inputs. Legal and production approvals remain separate launch gates.
+Approved product decisions are implementation inputs. Legal, provider, and production approvals remain distinct gates.
 
-| Decision | Status | Owner / approval | Decision |
-| --- | --- | --- | --- |
-| Product name | Approved | Founders | Lex |
-| First clients | Approved | Founders | Adult individual tenants and landlords |
-| First service | Approved for test build | Founders; legal text pending partner review | Lawyer-reviewed tenancy assessment |
-| Intake reach | Approved | Founders | Nationwide Nigeria intake |
-| Service-enabled geography | Approved | Founders | Lagos only initially |
-| Lawyer marketplace | Approved | Founders | Open applications; only verified lawyers appear; matched shortlist of 3-5 |
-| Initial lawyer cohort | Approved | Founders | 50-100 applicants |
-| Matching and payment order | Approved | Founders | Client chooses, lawyer clears conflict and accepts, then client pays |
-| Test price and SLA | Approved | Founders | NGN 10,000; 48 hours after payment and complete information |
-| Commission test configuration | Approved for sandbox | Founders; partner review before public launch | Configurable 20 percent Lex / 80 percent lawyer; lawyer bears gateway fees |
-| Payment providers | Approved | Founders | Paystack default, Flutterwave fully tested fallback |
-| Mobile platforms | Approved | Founders | Android and iOS from one Expo codebase; Android APK is first device artifact |
-| Lawyer/admin channel | Approved | Founders | Responsive web workspace |
-| WhatsApp | Approved | Founders | Full intake, media/voice notes, updates, and app continuity through Meta Cloud API |
-| Languages | Approved | Founders | English, Pidgin, Hausa, Yoruba, Igbo intake; English authoritative legal record |
-| AI | Approved | Founders | OpenAI behind provider abstraction; intake, transcription, summarization, classification, drafting support, routing only |
-| Urgent matters | Approved | Founders | Expedited human escalation; no emergency-service guarantee |
-| Delivery failure | Approved | Founders | Client chooses reassignment or full refund |
-| Hosting | Approved direction | Founders | New isolated Hetzner environment; do not touch existing servers |
-| Public launch | Gated | Lawyer co-founder | Legal, commercial, privacy, translation, and public-claims review required |
+| Decision                  | Status                         | Owner / approval                                          | Decision                                                                                   |
+| ------------------------- | ------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Product name              | Approved                       | Founders                                                  | Lex                                                                                        |
+| First clients             | Approved                       | Founders                                                  | Adult individual tenants and landlords                                                     |
+| First service             | Approved for controlled test   | Founders; legal text pending partner review               | Lawyer-reviewed tenancy assessment                                                         |
+| Intake reach              | Approved                       | Founders                                                  | Nationwide Nigeria intake                                                                  |
+| Service-enabled geography | Approved                       | Founders                                                  | Lagos only initially                                                                       |
+| Pilot languages           | Approved                       | Founders                                                  | English and reviewed Pidgin; English authoritative                                         |
+| Deferred languages        | Approved roadmap               | Founders                                                  | Hausa, Yoruba, and Igbo after native-language review                                       |
+| WhatsApp pilot scope      | Approved                       | Founders                                                  | OTP, recovery/status notices, requests, and ready links through Meta test number           |
+| Full WhatsApp intake      | Deferred                       | Founders                                                  | Separate future state machine and acceptance plan                                          |
+| Mobile priority           | Approved                       | Founders                                                  | Android physical-device pilot first; Expo/React Native source with Gradle APK              |
+| Marketplace               | Approved                       | Founders                                                  | Open applications; only verified eligible lawyers appear; shortlist of 3-5                 |
+| Matching/payment order    | Approved                       | Founders                                                  | Client chooses, lawyer clears conflict and accepts, then client pays                       |
+| Price/SLA                 | Approved for sandbox           | Founders; partner approval before pilot with real clients | NGN 10,000 and 48 hours after verified payment plus complete information                   |
+| Commercial split          | Sandbox only                   | Founders; lawyer co-founder review required               | Configurable 20 percent Lex / 80 percent lawyer; lawyer share bears gateway fees           |
+| Payment providers         | Approved for sandbox           | Founders                                                  | Paystack default, Flutterwave exercised fallback                                           |
+| AI                        | Approved within boundary       | Founders                                                  | Intake, transcription, extraction, summary, classification, drafting support, routing only |
+| Urgent matters            | Approved                       | Founders                                                  | Human escalation; no emergency-service guarantee                                           |
+| Hosting                   | Approved staging direction     | Founders                                                  | Isolated Cloudflare Workers/D1/R2/Queues/Static Assets using `lex-staging-*` names         |
+| Cloudflare plan           | Approved                       | User                                                      | Free plan first; any paid upgrade requires explicit approval                               |
+| Cloudflare data use       | Approved for synthetic staging | Founders                                                  | EU-restricted D1/R2; globally distributed compute; no real client data pending review      |
+| Public launch             | Gated                          | Lawyer co-founder                                         | Legal, commercial, privacy, translation, provider, and claims review required              |
 
-## Remaining external prerequisites
+## External prerequisites
 
-- Meta Business/WhatsApp test credentials and phone number.
-- OpenAI API key.
+- Meta Business/WhatsApp test credentials and an approved authentication template.
+- OpenAI test project key.
 - Paystack and Flutterwave sandbox keys and test subaccounts.
-- Transactional email credentials.
-- New isolated Hetzner server, private object storage, and a staging domain.
-- Native-language review of fixed consent and safety translations before public launch.
+- Push-notification credentials for provider-level delivery tests.
+- A future transactional email provider or explicit Workers Paid approval where needed.
+- Lawyer-co-founder approval records for legal content, engagement, privacy, conflicts, commercial structure, and public claims.
+- Native review of Pidgin fixed consent and safety text before client pilot.

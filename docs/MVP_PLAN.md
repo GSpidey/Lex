@@ -1,37 +1,49 @@
-# Nigeria MVP Implementation Plan
+# Lex Cloudflare-Native Controlled Pilot Plan
 
-## Product
+## Product contract
 
 - Adult individual tenants and landlords.
-- Nationwide Nigeria intake; Lagos is initially `active`, other states are `intake_only`.
-- Separate tenant and landlord workflow versions.
-- Lawyer-reviewed tenancy assessment, NGN 10,000 test price, 48-hour delivery target.
-- Open lawyer applications; admin verification; 3-5 eligible matches; conflict acceptance before payment.
-- Paystack default and Flutterwave fallback, both fully exercised in test mode.
-- Mobile app plus responsive lawyer/admin workspace and a shared WhatsApp matter channel.
-- English, Pidgin, Hausa, Yoruba, and Igbo intake; English authoritative legal record.
-- OpenAI is limited to intake, transcription, summarization, classification, drafting support, and routing.
+- Nationwide Nigeria intake; Lagos is `active`, every other state is `intake_only`.
+- Separate, versioned tenant and landlord tenancy questionnaires.
+- Lawyer-reviewed tenancy assessment at a sandbox price of NGN 10,000 with a 48-hour target after verified payment and complete required information.
+- Open lawyer applications, operations verification, 3-5 eligible matches, and conflict acceptance before payment.
+- Android is the first physical-device platform. The lawyer and operations workspace is responsive and static-hostable.
+- English and reviewed Pidgin are the controlled-pilot client languages; English is the authoritative legal record.
+- WhatsApp provides OTP and status continuity. Full conversational intake is deferred.
+- AI is limited to intake, transcription, summarization, extraction, classification, drafting support, and routing, with human-review boundaries.
 
-## Architecture
+## Active staging architecture
 
-- Strict TypeScript pnpm/Turborepo monorepo.
-- Expo/React Native client, Next.js web workspace, NestJS API and worker.
-- PostgreSQL/Prisma, Redis/BullMQ, S3-compatible private storage.
-- Provider-neutral adapters for AI, transcription, messaging, payments, object storage, jurisdiction resolution, and professional verification.
-- Versioned jurisdiction/service workflows and immutable audit history.
-- Docker Compose locally and on a new isolated Hetzner staging server.
+| Deployment                        | Responsibility                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `lex-staging-api`                 | Hono `/v1` API, authentication, authorization, R2 streaming, provider webhooks, queue publishing |
+| `lex-staging-jobs`                | Queue consumers, dead-letter inspection, five-minute maintenance/SLA Cron                        |
+| `lex-staging-web`                 | Static lawyer and operations frontend                                                            |
+| `lex-staging-db`                  | EU-jurisdiction D1 database containing synthetic staging records                                 |
+| `lex-staging-private-eu`          | Private EU-restricted R2 evidence bucket                                                         |
+| `lex-staging-jobs` queue          | AI, transcription, reconciliation, evidence, and maintenance jobs                                |
+| `lex-staging-notifications` queue | WhatsApp, push, and future email delivery                                                        |
+| `lex-staging-dead-letter` queue   | Exhausted job and notification messages                                                          |
+
+The current NestJS, PostgreSQL, Prisma, Redis/BullMQ, and MinIO code remains as a fallback. Cloudflare business services depend on repository, storage, queue, cryptography, and provider contracts rather than Worker globals or binding names.
 
 ## Delivery sequence
 
-1. Foundation, contracts, environment validation, local infrastructure.
-2. Identity, permissions, consent, sessions, and audit controls.
-3. Jurisdiction engine, tenant/landlord intake, urgent escalation, matching.
-4. Client mobile app and channel-neutral WhatsApp workflow.
-5. Lawyer application, verification, conflict, assessment, and admin operations.
-6. Paystack/Flutterwave payments, splits, reconciliation, reassignment, refunds.
-7. Security hardening, backups, restore tests, and Hetzner staging.
-8. Passing automated tests and a signed installable Android APK.
+1. Correct documents and establish an evidence-based delivery-status matrix.
+2. Preserve existing API behavior with contract and state-transition tests.
+3. Add Worker packages, `wrangler.jsonc` configuration, generated binding types, and local simulations.
+4. Add portable D1 schema, migrations, synthetic seed, idempotency keys, and optimistic versions.
+5. Port authentication, intake, matters, matching, payments, privacy, messaging, and operations behind interfaces.
+6. Add private R2 upload/download, Queue consumers, job ledger, retries, dead-letter handling, and Cron recovery.
+7. Complete English/Pidgin Android and lawyer/operations user flows without dead navigation.
+8. Run local migrations, type checks, tests, bundle/startup checks, and Wrangler dry-runs.
+9. Create only the approved `lex-staging-*` resources in the current Cloudflare account.
+10. Deploy to `workers.dev`, migrate and seed synthetic data, then build the Gradle APK against the approved staging URL.
+11. Add Meta, OpenAI, Paystack, Flutterwave, and push test secrets only when credentials are provided securely.
+12. Run provider, physical-device, recovery, replay, authorization, and end-to-end acceptance tests.
 
-## Public-launch gates
+## Acceptance boundary
 
-Provider test credentials are sufficient for development. Before public launch, the lawyer co-founder reviews legal content, disclosures, engagement formation, commission handling, payments, conflicts, assessment templates, urgent handling, privacy, and public claims. Native-language reviewers approve fixed translations.
+No feature is described as complete merely because its screen, route, adapter, or test double exists. Status is tracked in `docs/DELIVERY_STATUS.md`. Provider-dependent items require provider-level evidence; physical-device items require device evidence; legal content and commercial structures require recorded lawyer-co-founder approval.
+
+If secure representative Worker endpoints cannot stay within the Free plan's CPU limit, implementation pauses for approval of the paid Workers plan. Security controls must not be weakened to fit the Free plan.

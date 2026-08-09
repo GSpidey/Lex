@@ -1,0 +1,67 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lex-staging-jobs",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "minify": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "vars": {
+    "APP_ENV": "staging",
+    "META_GRAPH_VERSION": "v24.0",
+    "META_AUTH_TEMPLATE": "lex_authentication",
+    "META_AUTH_LOCALE": "en",
+    "META_STATUS_TEMPLATE": "lex_matter_status",
+  },
+  "secrets": { "required": ["AUTH_HMAC_PEPPER", "FIELD_ENCRYPTION_KEY"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lex-staging-db",
+      "database_id": "20373ab7-8654-4b02-8a3e-a486f9a45076",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRIVATE_EVIDENCE",
+      "bucket_name": "lex-staging-private-eu",
+      "jurisdiction": "eu",
+    },
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "JOBS_QUEUE", "queue": "lex-staging-jobs" },
+      {
+        "binding": "NOTIFICATIONS_QUEUE",
+        "queue": "lex-staging-notifications",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "lex-staging-jobs",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "lex-staging-dead-letter",
+        "retry_delay": 30,
+      },
+      {
+        "queue": "lex-staging-notifications",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "lex-staging-dead-letter",
+        "retry_delay": 30,
+      },
+      {
+        "queue": "lex-staging-dead-letter",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 1,
+      },
+    ],
+  },
+  "triggers": { "crons": ["*/5 * * * *"] },
+}

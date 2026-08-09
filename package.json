@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.16.0",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
@@ -18,13 +20,18 @@
     "db:migrate": "pnpm --filter @lex/database prisma:migrate",
     "db:seed": "pnpm --filter @lex/database prisma:seed",
     "smoke": "node scripts/smoke.mjs",
-    "apk": "pnpm --filter @lex/mobile apk"
+    "apk": "pnpm --filter @lex/mobile apk",
+    "cf:types": "pnpm --filter @lex/cloudflare-api cf:types && pnpm --filter @lex/cloudflare-jobs cf:types && pnpm --filter @lex/cloudflare-web cf:types",
+    "cf:db:local": "pnpm --filter @lex/cloudflare-api db:migrate:local && pnpm --filter @lex/cloudflare-api db:seed:local",
+    "cf:dry-run": "pnpm --filter @lex/cloudflare-api deploy:dry && pnpm --filter @lex/cloudflare-jobs deploy:dry && pnpm --filter @lex/cloudflare-web deploy:dry",
+    "cf:check": "pnpm cf:types && pnpm typecheck && pnpm test && pnpm cf:dry-run"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "prettier": "^3.7.4",
     "turbo": "^2.10.9",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.0.0"
   }
 }

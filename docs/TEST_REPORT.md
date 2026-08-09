@@ -1,35 +1,29 @@
-# Lex MVP Verification Report
+# Lex Controlled-Pilot Verification Report
 
-Date: 2026-08-08  
-Environment: local Windows development environment with provider fallbacks; no production credentials or services used.
+Date: 2026-08-09
+Environment: isolated Cloudflare staging plus local Windows/physical Android testing; synthetic data only.
 
 ## Verified
 
-- Project scope remained `C:\Users\ahmed\Applications\Lex`; no sibling project or existing server was inspected or changed.
-- PostgreSQL schema migration and idempotent seed completed against the Lex-only local database.
-- Local PostgreSQL, Redis, and MinIO-compatible services are configured; Lex Redis uses host port 6380 to avoid an unrelated occupied port.
-- Strict TypeScript builds complete for the API, worker, web workspace, shared contracts, jurisdiction package, and database package.
-- Unit tests cover matter-state controls, jurisdiction activation, separate tenant/landlord workflows, and payment-provider contracts.
-- The local end-to-end smoke journey verifies client OTP/email linking, lawyer/admin MFA, Lagos matching, disallowed-lawyer exclusion, conflict acceptance before payment, both local payment-provider fallbacks, the 20/80 snapshot, SLA start rules, lawyer-attested delivery, refund, webhook replay protection, non-Lagos intake-only behavior, and cross-client denial.
-- OpenAPI/API health responds with a connected database and explicit provider-configuration status.
-- Expo exports both Android and iOS JavaScript bundles.
-- Android Gradle `assembleRelease` completed successfully for arm64-v8a, armeabi-v7a, x86, and x86_64 after excluding the unused transitive gesture-handler native module.
-- `Lex-internal-0.1.0.apk` is v2-signed with the local Android test/debug certificate and has SHA-256 `0B2999D9E0A58763D7692B8185DA80B0D94D58FEC286CFB9D744C3925BEA0A85`. Production signing is intentionally not configured.
-- The APK installed successfully on connected device `SM_F946W` (`R3CW70E87KD`), launched without Metro or a development server, and was confirmed as the focused Android activity. A device-launch screenshot is saved with the artifact evidence.
-- The production web build succeeds.
-- Hands-on browser verification completed the administrator OTP and authenticator enrollment flow, loaded the operations dashboard, opened a matter detail, and confirmed a responsive 390-pixel mobile-browser layout without horizontal overflow.
-- Browser testing found and corrected the distinction between MFA setup and MFA verification for existing accounts.
+- Work remained inside `C:\Users\ahmed\Applications\Lex`; no sibling project or pre-existing Cloudflare resource was modified or reused.
+- New deployments are live at `lex-staging-api.wispy-silence-1cb0.workers.dev`, `lex-staging-jobs.wispy-silence-1cb0.workers.dev`, and `lex-staging-web.wispy-silence-1cb0.workers.dev`.
+- New EU D1 `lex-staging-db` has 28 tables after two Wrangler migrations and a synthetic tenant/landlord seed. Migrations also apply from empty locally.
+- New private EU R2 `lex-staging-private-eu` is empty and has no public development URL. An accidental, newly-created empty global bucket namespace was detected and removed; the intended EU bucket was retained and rebound explicitly with `jurisdiction = eu`.
+- New `lex-staging-jobs`, `lex-staging-notifications`, and `lex-staging-dead-letter` queues are attached to consumers, bounded retries, and a five-minute maintenance Cron.
+- Generated Wrangler bindings, strict TypeScript checks, three Worker/D1 integration tests, seven existing domain/provider tests, static web production build, and all three deployment dry-runs pass.
+- API health and OpenAPI return HTTP 200 remotely; web returns HTTP 200 with security policy headers and exact-origin CORS.
+- Representative deployed startup time reported 27-52 ms for the API and 4-5 ms for jobs. The Free plan rejected a paid-only explicit CPU limit, so no plan upgrade was made and platform defaults remain enforced.
+- A fresh Gradle `assembleRelease` APK (98,728,676 bytes; SHA-256 `56682DD0FB4F960E9B10CFE72F57AEE695D9D8370239AD8BF38488CC83212CB2`) was installed on device `R3CW70E87KD`.
+- Android confirmed `com.lexnigeria.test.MainActivity` in the foreground. The rendered staging screen was visually checked without Metro or a development server.
 
-## Credential- or infrastructure-dependent verification still required
+## Still gated
 
-- Real OpenAI Responses and transcription requests require an OpenAI test key.
-- Meta test-number delivery, interactive WhatsApp intake, media retrieval, template approval, and status callbacks require Meta test credentials.
-- Real Paystack and Flutterwave sandbox checkout, split-subaccount settlement, provider receipts, delayed webhook behavior, and provider refunds require sandbox keys and subaccounts.
-- SMTP delivery requires a transactional email test account.
-- Hetzner staging, firewall, TLS, object storage, encrypted backup scheduling, and isolated restore testing require explicit provisioning authorization and new Lex-only infrastructure credentials.
-- iOS device build/signing requires the appropriate Apple account and provisioning.
-- Public legal content, commission handling, client-money implications, disclosures, translations, and public claims remain gated by the lawyer co-founder and native-language reviewers.
+- Meta WhatsApp test-number OTP and status delivery require Meta test credentials and an approved authentication template. The API currently returns an explicit unavailable response instead of simulating delivery.
+- OpenAI transcription/extraction, Paystack/Flutterwave sandbox settlement/refunds, push delivery, and email require their test credentials.
+- Remote R2 matter-access, queue failure/replay, payment-webhook replay, and an isolated D1 Time Travel restore drill remain to be exercised.
+- Pidgin legal copy, seeded legal workflows, pricing, commission treatment, disclosures, and public claims require recorded lawyer-co-founder review.
+- The current Android release uses local test signing. Production signing, iOS signing, a custom domain, production credentials, and public distribution are intentionally absent.
 
-## Deliberate safety boundary
+## Safety boundary
 
-Passing local provider fallbacks proves Lex's state transitions and provider contracts; it does not prove provider-account configuration or production readiness. No real money, production WhatsApp number, production AI matter data, public app store, domain, or existing server was used.
+This proves a deployed synthetic staging foundation and a physical-device client artifact. It does not establish provider-account readiness, legal approval, production security accreditation, or pilot readiness with real clients or money.

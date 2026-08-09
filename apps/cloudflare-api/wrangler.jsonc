@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lex-staging-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "minify": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "vars": {
+    "APP_ENV": "staging",
+    "CORS_ORIGINS": "https://lex-staging-web.wispy-silence-1cb0.workers.dev",
+    "DEV_OTP_ECHO": "false",
+    "EMAIL_DELIVERY_ENABLED": "false",
+    "META_GRAPH_VERSION": "v24.0",
+    "META_AUTH_TEMPLATE": "lex_authentication",
+    "META_AUTH_LOCALE": "en",
+    "MAX_EVIDENCE_BYTES": "20971520",
+  },
+  "secrets": { "required": ["AUTH_HMAC_PEPPER", "FIELD_ENCRYPTION_KEY"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lex-staging-db",
+      "database_id": "20373ab7-8654-4b02-8a3e-a486f9a45076",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRIVATE_EVIDENCE",
+      "bucket_name": "lex-staging-private-eu",
+      "jurisdiction": "eu",
+    },
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "JOBS_QUEUE", "queue": "lex-staging-jobs" },
+      {
+        "binding": "NOTIFICATIONS_QUEUE",
+        "queue": "lex-staging-notifications",
+      },
+    ],
+  },
+}
