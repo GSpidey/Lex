@@ -24,6 +24,7 @@ The existing NestJS/PostgreSQL/Redis/MinIO implementation remains in the reposit
 - AI may assist intake, transcription, extraction, summarization, classification, drafting, and routing. Only a lawyer can approve or deliver a legal assessment.
 - The NGN 10,000 price and 20/80 split are sandbox configuration only pending lawyer-co-founder approval.
 - Staging uses synthetic data only. Real clients, production money, and public legal claims are prohibited.
+- Until Meta OTP is configured, staging client access is limited to the synthetic number `+2348000000001` and a six-digit code held only as a Cloudflare secret. This bypass is unavailable for lawyer/admin roles and must be disabled before production.
 - Start on the Cloudflare Workers Free plan. Any paid feature or upgrade requires the user's approval.
 
 ## Project documents
@@ -50,6 +51,6 @@ pnpm.cmd test
 pnpm.cmd cf:dry-run
 ```
 
-The isolated Workers/D1/R2/Queues staging foundation is deployed and the staging Gradle APK has been installed on a physical Android device. Provider-backed WhatsApp, AI, payment, push, and email tests remain gated by test credentials. See `docs/TEST_REPORT.md` for exact evidence and limitations.
+The isolated Workers/D1/R2/Queues staging foundation is deployed and the staging Gradle APK has been installed on a physical Android device. The client sign-in page defaults to Nigeria and includes a multi-country calling-code selector. Provider-backed WhatsApp, AI, payment, push, and email tests remain gated by test credentials. See `docs/TEST_REPORT.md` for exact evidence and limitations.
 
 Never place secrets in source, environment examples, APKs, logs, or browser-visible configuration.

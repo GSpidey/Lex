@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  APP_ENV,
   API_URL,
   api,
   clearSession,
@@ -98,6 +99,25 @@ type Transcription = {
   version: number;
 };
 type Preferences = { whatsapp: boolean; push: boolean; email: boolean };
+type CountryCode = {
+  country: string;
+  iso: string;
+  dialCode: string;
+};
+
+const COUNTRY_CODES: CountryCode[] = [
+  { country: "Nigeria", iso: "NG", dialCode: "+234" },
+  { country: "Ghana", iso: "GH", dialCode: "+233" },
+  { country: "Kenya", iso: "KE", dialCode: "+254" },
+  { country: "South Africa", iso: "ZA", dialCode: "+27" },
+  { country: "Uganda", iso: "UG", dialCode: "+256" },
+  { country: "Rwanda", iso: "RW", dialCode: "+250" },
+  { country: "United Kingdom", iso: "GB", dialCode: "+44" },
+  { country: "United States / Canada", iso: "US", dialCode: "+1" },
+  { country: "United Arab Emirates", iso: "AE", dialCode: "+971" },
+  { country: "India", iso: "IN", dialCode: "+91" },
+];
+const STAGING_TEST_PHONE = "+2348000000001";
 
 const copy = {
   en: {
@@ -139,7 +159,8 @@ export default function LexApp() {
   const [language, setLanguage] = useState<Language>("en");
   const [role, setRole] = useState<Role>("tenant");
   const [stateCode, setStateCode] = useState("LA");
-  const [phone, setPhone] = useState("+234");
+  const [country, setCountry] = useState(COUNTRY_CODES[0]!);
+  const [nationalNumber, setNationalNumber] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [otp, setOtp] = useState("");
   const [intake, setIntake] = useState<Intake | null>(null);
@@ -177,6 +198,7 @@ export default function LexApp() {
   const [notice, setNotice] = useState("");
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const words = copy[language];
+  const phone = `${country.dialCode}${nationalNumber.replace(/\D/gu, "").replace(/^0+/u, "")}`;
 
   useEffect(() => {
     void loadSession().then(setSession);
@@ -205,25 +227,28 @@ export default function LexApp() {
 
   async function requestOtp() {
     await run(async () => {
-      const result = await api<{ challengeId: string; devCode?: string }>(
-        "/auth/otp/request",
-        {
-          method: "POST",
-          headers: { "X-Device-Id": Platform.OS },
-          body: JSON.stringify({
-            channel: "whatsapp",
-            phone,
-            purpose: "sign_in",
-            locale: language,
-          }),
-        },
-      );
+      const result = await api<{
+        challengeId: string;
+        devCode?: string;
+        stagingTestLogin?: boolean;
+      }>("/auth/otp/request", {
+        method: "POST",
+        headers: { "X-Device-Id": Platform.OS },
+        body: JSON.stringify({
+          channel: "whatsapp",
+          phone,
+          purpose: "sign_in",
+          locale: language,
+        }),
+      });
       setChallengeId(result.challengeId);
       if (result.devCode) setOtp(result.devCode);
       setNotice(
-        language === "pcm"
-          ? "We send six-digit code enter your WhatsApp."
-          : "We sent a six-digit code through WhatsApp.",
+        result.stagingTestLogin
+          ? "Staging test login is ready. Enter the private six-digit test code."
+          : language === "pcm"
+            ? "We send six-digit code enter your WhatsApp."
+            : "We sent a six-digit code through WhatsApp.",
       );
     });
   }
@@ -660,8 +685,10 @@ export default function LexApp() {
       <Auth
         language={language}
         setLanguage={setLanguage}
-        phone={phone}
-        setPhone={setPhone}
+        country={country}
+        setCountry={setCountry}
+        nationalNumber={nationalNumber}
+        setNationalNumber={setNationalNumber}
         challengeId={challengeId}
         otp={otp}
         setOtp={setOtp}
@@ -669,6 +696,18 @@ export default function LexApp() {
         notice={notice}
         requestOtp={requestOtp}
         verifyOtp={verifyOtp}
+        useStagingTestNumber={() => {
+          setCountry(COUNTRY_CODES[0]!);
+          setNationalNumber(STAGING_TEST_PHONE.slice(4));
+          setNotice(
+            "Synthetic staging number selected. No WhatsApp message will be sent.",
+          );
+        }}
+        resetChallenge={() => {
+          setChallengeId("");
+          setOtp("");
+          setNotice("");
+        }}
       />
     );
   if (screen === "intake" && intake)
@@ -762,8 +801,10 @@ export default function LexApp() {
 function Auth(props: {
   language: Language;
   setLanguage: (value: Language) => void;
-  phone: string;
-  setPhone: (value: string) => void;
+  country: CountryCode;
+  setCountry: (value: CountryCode) => void;
+  nationalNumber: string;
+  setNationalNumber: (value: string) => void;
   challengeId: string;
   otp: string;
   setOtp: (value: string) => void;
@@ -771,6 +812,8 @@ function Auth(props: {
   notice: string;
   requestOtp: () => void;
   verifyOtp: () => void;
+  useStagingTestNumber: () => void;
+  resetChallenge: () => void;
 }) {
   const words = copy[props.language];
   return (
@@ -805,18 +848,38 @@ function Auth(props: {
             {!props.challengeId ? (
               <>
                 <Label text="WhatsApp phone number" />
-                <TextInput
-                  style={styles.input}
-                  value={props.phone}
-                  onChangeText={props.setPhone}
-                  keyboardType="phone-pad"
-                  placeholder="+234..."
+                <CountryCodeDropdown
+                  selected={props.country}
+                  onSelect={props.setCountry}
                 />
+                <View style={styles.phoneRow}>
+                  <View style={styles.dialCodeBox}>
+                    <Text style={styles.dialCodeText}>
+                      {props.country.dialCode}
+                    </Text>
+                  </View>
+                  <TextInput
+                    style={[styles.input, styles.phoneInput]}
+                    value={props.nationalNumber}
+                    onChangeText={props.setNationalNumber}
+                    keyboardType="phone-pad"
+                    placeholder="801 234 5678"
+                    maxLength={15}
+                  />
+                </View>
                 <Button
                   label={words.continue}
                   onPress={props.requestOtp}
                   busy={props.busy}
+                  disabled={props.nationalNumber.replace(/\D/gu, "").length < 7}
                 />
+                {APP_ENV === "staging" ? (
+                  <Button
+                    secondary
+                    label="Use staging test number"
+                    onPress={props.useStagingTestNumber}
+                  />
+                ) : null}
               </>
             ) : (
               <>
@@ -833,6 +896,11 @@ function Auth(props: {
                   onPress={props.verifyOtp}
                   busy={props.busy}
                 />
+                <Button
+                  secondary
+                  label="Change phone number"
+                  onPress={props.resetChallenge}
+                />
               </>
             )}
             {props.notice ? <Notice text={props.notice} /> : null}
@@ -840,6 +908,52 @@ function Auth(props: {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function CountryCodeDropdown({
+  selected,
+  onSelect,
+}: {
+  selected: CountryCode;
+  onSelect: (value: CountryCode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.dropdownContainer}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Select phone country code"
+        onPress={() => setOpen((current) => !current)}
+        style={styles.dropdownTrigger}
+      >
+        <Text style={styles.dropdownTriggerText}>
+          {selected.country} ({selected.dialCode})
+        </Text>
+        <Text style={styles.dropdownArrow}>{open ? "▲" : "▼"}</Text>
+      </Pressable>
+      {open ? (
+        <View style={styles.dropdownMenu}>
+          {COUNTRY_CODES.map((item) => (
+            <Pressable
+              key={`${item.iso}-${item.dialCode}`}
+              accessibilityRole="button"
+              onPress={() => {
+                onSelect(item);
+                setOpen(false);
+              }}
+              style={[
+                styles.dropdownOption,
+                item.iso === selected.iso && styles.dropdownOptionSelected,
+              ]}
+            >
+              <Text style={styles.dropdownOptionCountry}>{item.country}</Text>
+              <Text style={styles.dropdownOptionCode}>{item.dialCode}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -1572,6 +1686,52 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#17241d",
   },
+  phoneRow: { flexDirection: "row", gap: 8, alignItems: "stretch" },
+  dialCodeBox: {
+    minWidth: 72,
+    backgroundColor: "#eef1ec",
+    borderWidth: 1,
+    borderColor: "#cfd3cd",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  dialCodeText: { color: "#17241d", fontSize: 15, fontWeight: "800" },
+  phoneInput: { flex: 1 },
+  dropdownContainer: { position: "relative", zIndex: 10 },
+  dropdownTrigger: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: "#cfd3cd",
+    borderRadius: 12,
+    backgroundColor: "white",
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dropdownTriggerText: { color: "#17241d", fontSize: 14, fontWeight: "700" },
+  dropdownArrow: { color: "#1e6248", fontSize: 11 },
+  dropdownMenu: {
+    borderWidth: 1,
+    borderColor: "#cfd3cd",
+    borderRadius: 12,
+    backgroundColor: "white",
+    overflow: "hidden",
+  },
+  dropdownOption: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e2e5df",
+  },
+  dropdownOptionSelected: { backgroundColor: "#e5f0e8" },
+  dropdownOptionCountry: { color: "#17241d", fontSize: 13 },
+  dropdownOptionCode: { color: "#1e6248", fontWeight: "800", fontSize: 13 },
   textarea: { minHeight: 120, textAlignVertical: "top" },
   textareaSmall: { minHeight: 80, textAlignVertical: "top" },
   card: {

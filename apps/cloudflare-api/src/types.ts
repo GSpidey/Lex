@@ -6,6 +6,8 @@ export interface Env {
   APP_ENV: "local" | "staging" | "production";
   CORS_ORIGINS: string;
   DEV_OTP_ECHO: string;
+  STAGING_TEST_LOGIN_ENABLED: string;
+  STAGING_TEST_PHONE_E164: string;
   EMAIL_DELIVERY_ENABLED: string;
   META_GRAPH_VERSION: string;
   META_AUTH_TEMPLATE: string;
@@ -23,6 +25,7 @@ export interface Env {
   FLUTTERWAVE_WEBHOOK_SECRET?: string;
   OPENAI_API_KEY?: string;
   EXPO_ACCESS_TOKEN?: string;
+  STAGING_TEST_OTP_CODE?: string;
 }
 
 export interface AuthenticatedUser {

@@ -51,6 +51,7 @@ AI cannot publish legal opinions, predict outcomes definitively, activate a juri
 - Android-first client and responsive lawyer/operations web workspace.
 - English and reviewed Pidgin intake; English is the authoritative lawyer record.
 - WhatsApp OTP and status continuity. Full conversational WhatsApp intake and Hausa, Yoruba, and Igbo are deferred.
+- A single synthetic client number may use a server-secret OTP in staging while Meta is unavailable. The exception is restricted to `sign_in`, cannot grant lawyer/admin access, and is prohibited outside staging.
 - Cloudflare-native synthetic staging with new isolated `lex-staging-*` Workers, D1, R2, Queues, and Cron resources.
 
 The existing NestJS/PostgreSQL/Redis/MinIO implementation is retained as a portability fallback. It is not the active staging runtime.

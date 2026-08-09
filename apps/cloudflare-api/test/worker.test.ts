@@ -34,7 +34,7 @@ describe("Lex Worker", () => {
       },
       body: JSON.stringify({
         channel: "whatsapp",
-        phone: "+2348012345678",
+        phone: "+2348000000001",
         purpose: "sign_in",
         locale: "en",
       }),
@@ -42,15 +42,15 @@ describe("Lex Worker", () => {
     expect(requested.status).toBe(201);
     const challenge = await requested.json<{
       challengeId: string;
-      devCode: string;
+      stagingTestLogin: boolean;
     }>();
-    expect(challenge.devCode).toMatch(/^\d{6}$/u);
+    expect(challenge.stagingTestLogin).toBe(true);
     const verified = await SELF.fetch("https://lex.test/v1/auth/otp/verify", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         challengeId: challenge.challengeId,
-        code: challenge.devCode,
+        code: "246810",
         deviceName: "Worker test",
       }),
     });
@@ -61,7 +61,7 @@ describe("Lex Worker", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         challengeId: challenge.challengeId,
-        code: challenge.devCode,
+        code: "246810",
       }),
     });
     expect(replay.status).toBe(401);
@@ -71,6 +71,27 @@ describe("Lex Worker", () => {
     expect(capabilities.status).toBe(200);
     await expect(capabilities.json()).resolves.toMatchObject({
       pilot: { country: "NG", activeState: "LA", languages: ["en", "pcm"] },
+    });
+  });
+
+  it("does not bypass WhatsApp for any other staging number", async () => {
+    const response = await SELF.fetch("https://lex.test/v1/auth/otp/request", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-device-id": "worker-test-other-number",
+      },
+      body: JSON.stringify({
+        channel: "whatsapp",
+        phone: "+2348012345678",
+        purpose: "sign_in",
+        locale: "en",
+      }),
+    });
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      capability: "whatsapp_otp",
+      status: "unconfigured",
     });
   });
 

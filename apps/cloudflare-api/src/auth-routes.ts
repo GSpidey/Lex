@@ -53,8 +53,18 @@ auth.post(
         503,
       );
     }
+    const destination =
+      input.channel === "whatsapp" ? input.phone! : input.email!;
+    const stagingTestLogin =
+      context.env.APP_ENV === "staging" &&
+      context.env.STAGING_TEST_LOGIN_ENABLED === "true" &&
+      input.channel === "whatsapp" &&
+      input.purpose === "sign_in" &&
+      destination === context.env.STAGING_TEST_PHONE_E164 &&
+      /^\d{6}$/u.test(context.env.STAGING_TEST_OTP_CODE ?? "");
     if (
       input.channel === "whatsapp" &&
+      !stagingTestLogin &&
       context.env.DEV_OTP_ECHO !== "true" &&
       (!context.env.META_ACCESS_TOKEN || !context.env.META_PHONE_NUMBER_ID)
     ) {
@@ -67,8 +77,6 @@ auth.post(
         503,
       );
     }
-    const destination =
-      input.channel === "whatsapp" ? input.phone! : input.email!;
     const destinationHash = await hmac(
       destination.toLowerCase(),
       context.env.AUTH_HMAC_PEPPER,
@@ -107,7 +115,9 @@ auth.post(
       );
 
     const id = crypto.randomUUID();
-    const code = randomOtp();
+    const code = stagingTestLogin
+      ? context.env.STAGING_TEST_OTP_CODE!
+      : randomOtp();
     const createdAt = now();
     const encryptedDestination = await encrypt(
       destination,
@@ -115,10 +125,15 @@ auth.post(
     );
     const codeHash = await hmac(`${id}:${code}`, context.env.AUTH_HMAC_PEPPER);
     const user = await context.env.DB.prepare(
-      `SELECT id FROM users WHERE ${input.channel === "whatsapp" ? "phone_hash" : "email_hash"} = ?`,
+      `SELECT id,role FROM users WHERE ${input.channel === "whatsapp" ? "phone_hash" : "email_hash"} = ?`,
     )
       .bind(destinationHash)
-      .first<{ id: string }>();
+      .first<{ id: string; role: string }>();
+    if (stagingTestLogin && user && user.role !== "client")
+      return context.json(
+        { message: "The staging test identity is restricted to clients" },
+        403,
+      );
     await context.env.DB.batch([
       context.env.DB.prepare(
         "UPDATE auth_challenges SET superseded_at = ? WHERE destination_hash = ? AND consumed_at IS NULL AND superseded_at IS NULL",
@@ -146,32 +161,39 @@ auth.post(
         "auth.otp_requested",
         "AuthChallenge",
         id,
-        JSON.stringify({ channel: input.channel, purpose: input.purpose }),
+        JSON.stringify({
+          channel: input.channel,
+          purpose: input.purpose,
+          stagingTestLogin,
+        }),
         context.get("requestId"),
         createdAt,
       ),
     ]);
-    const jobPayload = await encrypt(
-      JSON.stringify({
-        challengeId: id,
-        channel: input.channel,
-        destination,
-        code,
-        locale: input.locale,
-      }),
-      context.env.FIELD_ENCRYPTION_KEY,
-    );
-    await recordJobBeforePublish(context.env, {
-      kind: "auth_otp",
-      queueName: "notifications",
-      idempotencyKey: `otp:${id}`,
-      payload: { encrypted: jobPayload },
-    });
+    if (!stagingTestLogin) {
+      const jobPayload = await encrypt(
+        JSON.stringify({
+          challengeId: id,
+          channel: input.channel,
+          destination,
+          code,
+          locale: input.locale,
+        }),
+        context.env.FIELD_ENCRYPTION_KEY,
+      );
+      await recordJobBeforePublish(context.env, {
+        kind: "auth_otp",
+        queueName: "notifications",
+        idempotencyKey: `otp:${id}`,
+        payload: { encrypted: jobPayload },
+      });
+    }
     return context.json(
       {
         challengeId: id,
         expiresAt: future(5 * 60_000),
-        delivery: input.channel,
+        delivery: stagingTestLogin ? "staging_test" : input.channel,
+        stagingTestLogin,
         ...(context.env.DEV_OTP_ECHO === "true" ? { devCode: code } : {}),
       },
       201,
