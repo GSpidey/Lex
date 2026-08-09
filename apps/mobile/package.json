@@ -1,0 +1,38 @@
+{
+  "name": "@lex/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "dev": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "build": "expo export --platform android && expo export --platform ios",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "apk": "expo prebuild --platform android --clean && cd android && gradlew.bat assembleRelease"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "@lex/jurisdictions": "workspace:*",
+    "expo": "~57.0.11",
+    "expo-audio": "~57.0.3",
+    "expo-document-picker": "~57.0.1",
+    "expo-image-picker": "~57.0.8",
+    "expo-notifications": "~57.0.9",
+    "expo-router": "~57.0.11",
+    "expo-secure-store": "~57.0.1",
+    "expo-status-bar": "~57.0.0",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "5.8.1",
+    "react-native-screens": "~4.24.0"
+  },
+  "devDependencies": { "@types/react": "^19.2.2", "typescript": "~6.0.3", "vitest": "^4.1.10" },
+  "expo": {
+    "autolinking": {
+      "exclude": ["react-native-gesture-handler"]
+    }
+  }
+}

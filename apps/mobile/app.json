@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "Lex",
+    "slug": "lex-nigeria",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "lex",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.lexnigeria.test", "infoPlist": { "NSMicrophoneUsageDescription": "Lex records voice notes that you choose to add to your private legal intake.", "NSCameraUsageDescription": "Lex uses the camera only when you choose to photograph supporting evidence." } },
+    "android": { "package": "com.lexnigeria.test", "permissions": ["RECORD_AUDIO", "CAMERA"], "adaptiveIcon": { "backgroundColor": "#123c2d" } },
+    "plugins": ["expo-router", "expo-secure-store", ["expo-audio", { "microphonePermission": "Allow Lex to record a voice note for your private tenancy intake." }], ["expo-image-picker", { "photosPermission": "Allow Lex to add selected evidence to your private tenancy intake.", "cameraPermission": "Allow Lex to photograph evidence you choose to submit." }], ["expo-notifications", { "color": "#1e6248" }]],
+    "experiments": { "typedRoutes": true },
+    "extra": { "legalReviewStatus": "pending-partner-review" }
+  }
+}

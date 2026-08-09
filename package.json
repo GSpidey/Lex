@@ -1,0 +1,30 @@
+{
+  "name": "lex-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.16.0",
+  "engines": { "node": ">=24.0.0" },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "infra:up": "docker compose up -d postgres redis minio createbuckets",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @lex/database prisma:generate",
+    "db:migrate": "pnpm --filter @lex/database prisma:migrate",
+    "db:seed": "pnpm --filter @lex/database prisma:seed",
+    "smoke": "node scripts/smoke.mjs",
+    "apk": "pnpm --filter @lex/mobile apk"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "prettier": "^3.7.4",
+    "turbo": "^2.10.9",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

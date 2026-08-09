@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: ../.env.staging
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"], interval: 10s, timeout: 5s, retries: 10 }
+    networks: [private]
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: /bin/sh -c 'exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"'
+    env_file: ../.env.staging
+    volumes: ["redis-data:/data"]
+    healthcheck: { test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"], interval: 10s, timeout: 5s, retries: 10 }
+    networks: [private]
+  api:
+    build: { context: .., dockerfile: infra/docker/api.Dockerfile }
+    restart: unless-stopped
+    env_file: ../.env.staging
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"], interval: 30s, timeout: 5s, retries: 5 }
+    networks: [private]
+  worker:
+    build: { context: .., dockerfile: infra/docker/worker.Dockerfile }
+    restart: unless-stopped
+    env_file: ../.env.staging
+    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
+    networks: [private]
+  web:
+    build: { context: .., dockerfile: infra/docker/web.Dockerfile, args: { NEXT_PUBLIC_API_URL: "https://${LEX_DOMAIN}/v1" } }
+    restart: unless-stopped
+    networks: [private]
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    env_file: ../.env.staging
+    ports: ["80:80", "443:443"]
+    volumes: ["../Caddyfile:/etc/caddy/Caddyfile:ro", "caddy-data:/data", "caddy-config:/config"]
+    depends_on: [api, web]
+    networks: [private]
+volumes: { postgres-data: {}, redis-data: {}, caddy-data: {}, caddy-config: {} }
+networks: { private: { driver: bridge } }

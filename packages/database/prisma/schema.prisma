@@ -1,0 +1,828 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  LAWYER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum Language {
+  EN
+  PCM
+  HA
+  YO
+  IG
+}
+
+enum TenancyRole {
+  TENANT
+  LANDLORD
+}
+
+enum JurisdictionStatus {
+  DRAFT
+  INTAKE_ONLY
+  ACTIVE
+  SUSPENDED
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  RETIRED
+}
+
+enum MatterState {
+  INTAKE_DRAFT
+  AWAITING_CONFIRMATION
+  SUBMITTED
+  INTAKE_ONLY
+  MATCHING
+  LAWYER_SELECTED
+  CONFLICT_REVIEW
+  AWAITING_PAYMENT
+  ACTIVE
+  AWAITING_CLIENT
+  LAWYER_REVIEW
+  DELIVERED
+  CLOSED
+  CANCELLED
+  REASSIGNMENT_REQUESTED
+  REFUND_REQUESTED
+  REFUNDED
+}
+
+enum UrgencyLevel {
+  STANDARD
+  URGENT
+  CRITICAL_HUMAN_REVIEW
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+  SUSPENDED
+}
+
+enum ConflictDecision {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum MatchStatus {
+  OFFERED
+  SELECTED
+  REJECTED
+  EXPIRED
+  REPLACED
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  FLUTTERWAVE
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+}
+
+enum MessageChannel {
+  MOBILE
+  WEB
+  WHATSAPP
+  EMAIL
+  SYSTEM
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum AttachmentStatus {
+  PENDING_UPLOAD
+  QUARANTINED
+  SCANNING
+  AVAILABLE
+  REJECTED
+  DELETED
+}
+
+enum AIRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  HUMAN_REVIEW_REQUIRED
+}
+
+enum HumanReviewStatus {
+  OPEN
+  APPROVED
+  CORRECTED
+  REJECTED
+}
+
+model User {
+  id                  String               @id @default(uuid()) @db.Uuid
+  role                UserRole
+  status              UserStatus           @default(PENDING)
+  phone               String?              @unique
+  phoneVerifiedAt     DateTime?
+  email               String?              @unique
+  emailVerifiedAt     DateTime?
+  preferredLanguage   Language              @default(EN)
+  mfaEnabled          Boolean               @default(false)
+  mfaSecretEncrypted  String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  deletedAt           DateTime?
+  clientProfile       ClientProfile?
+  lawyerProfile       LawyerProfile?
+  adminRole           AdminRole?
+  sessions            Session[]
+  authChallenges      AuthChallenge[]
+  intakeSessions      IntakeSession[]       @relation("ClientIntakes")
+  clientMatters       Matter[]              @relation("ClientMatters")
+  sentMessages        Message[]             @relation("SentMessages")
+  consentRecords      ConsentRecord[]
+  auditEvents         AuditEvent[]          @relation("AuditActor")
+  notifications       Notification[]
+  humanReviews        HumanReview[]         @relation("HumanReviewer")
+}
+
+model ClientProfile {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @unique @db.Uuid
+  displayName        String?
+  dateOfBirth        DateTime?
+  governmentIdType  String?
+  governmentIdRef   String?
+  whatsappOptInAt   DateTime?
+  whatsappUserId    String?  @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LawyerProfile {
+  id                   String               @id @default(uuid()) @db.Uuid
+  userId               String               @unique @db.Uuid
+  displayName          String
+  slug                 String               @unique
+  supremeCourtNumber   String               @unique
+  yearOfCall           Int
+  firmName             String?
+  bio                   String
+  languages            Language[]
+  stateCodes            String[]
+  tenancyRoles          TenancyRole[]
+  urgentAvailable      Boolean              @default(false)
+  acceptingNewMatters  Boolean              @default(true)
+  verificationStatus   VerificationStatus   @default(PENDING)
+  qualityScore          Decimal              @default(0) @db.Decimal(5, 2)
+  responseScore         Decimal              @default(0) @db.Decimal(5, 2)
+  lastShownAt           DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  user                  User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentials           ProfessionalCredential[]
+  verificationReviews  VerificationReview[]
+  availability          Availability[]
+  payoutAccounts        PayoutAccount[]
+  matches               LawyerMatch[]
+  conflictChecks        ConflictCheck[]
+  engagements           Engagement[]
+  assessments           Assessment[]
+  assignedMatters       Matter[]             @relation("AssignedLawyerMatters")
+}
+
+model AdminRole {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @db.Uuid
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  refreshTokenHash  String    @unique
+  deviceName        String?
+  ipHash            String?
+  userAgent         String?
+  expiresAt         DateTime
+  rotatedAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model AuthChallenge {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String?   @db.Uuid
+  channel         String
+  destinationHash String
+  destinationEncrypted String
+  codeHash        String
+  purpose         String
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(5)
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([destinationHash, purpose, createdAt])
+}
+
+model ProfessionalCredential {
+  id                String             @id @default(uuid()) @db.Uuid
+  lawyerId          String             @db.Uuid
+  type              String
+  licenceYear       Int?
+  identifier        String
+  evidenceObjectKey String?
+  status            VerificationStatus @default(PENDING)
+  verifiedAt        DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  lawyer            LawyerProfile      @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  @@index([lawyerId, status])
+}
+
+model VerificationReview {
+  id                String             @id @default(uuid()) @db.Uuid
+  lawyerId          String             @db.Uuid
+  reviewerUserId    String             @db.Uuid
+  source            String
+  evidenceReference String
+  licenceYear       Int
+  status            VerificationStatus
+  privateNote       String?
+  reviewedAt        DateTime           @default(now())
+  expiresAt         DateTime?
+  lawyer            LawyerProfile      @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  @@index([lawyerId, reviewedAt])
+}
+
+model Availability {
+  id          String        @id @default(uuid()) @db.Uuid
+  lawyerId    String        @db.Uuid
+  startsAt    DateTime
+  endsAt      DateTime
+  urgent      Boolean       @default(false)
+  capacity    Int           @default(1)
+  bookedCount Int           @default(0)
+  createdAt   DateTime      @default(now())
+  lawyer      LawyerProfile @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  @@index([lawyerId, startsAt, endsAt])
+}
+
+model PayoutAccount {
+  id                   String          @id @default(uuid()) @db.Uuid
+  lawyerId             String          @db.Uuid
+  provider             PaymentProvider
+  providerSubaccountId String
+  bankName             String?
+  accountLast4         String
+  accountName          String
+  verifiedAt           DateTime?
+  active               Boolean         @default(true)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  lawyer               LawyerProfile   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  @@unique([lawyerId, provider])
+}
+
+model Jurisdiction {
+  id          String             @id @default(uuid()) @db.Uuid
+  countryCode String
+  stateCode   String
+  name        String
+  status      JurisdictionStatus
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  versions    JurisdictionVersion[]
+  matters     Matter[]
+  @@unique([countryCode, stateCode])
+}
+
+model JurisdictionVersion {
+  id             String        @id @default(uuid()) @db.Uuid
+  jurisdictionId String        @db.Uuid
+  version        Int
+  status         ContentStatus @default(DRAFT)
+  effectiveFrom  DateTime?
+  retiredAt      DateTime?
+  approvedBy     String?
+  approvedAt     DateTime?
+  contentHash    String
+  disclosures    Json
+  retentionRules Json
+  createdAt      DateTime      @default(now())
+  jurisdiction   Jurisdiction  @relation(fields: [jurisdictionId], references: [id], onDelete: Cascade)
+  services       ServiceDefinition[]
+  @@unique([jurisdictionId, version])
+}
+
+model ServiceDefinition {
+  id                    String              @id @default(uuid()) @db.Uuid
+  jurisdictionVersionId String              @db.Uuid
+  code                  String
+  name                  String
+  tenancyRole           TenancyRole
+  version               Int
+  status                ContentStatus       @default(DRAFT)
+  priceMinor            Int
+  currency              String              @default("NGN")
+  slaHours              Int                 @default(48)
+  platformShareBps      Int                 @default(2000)
+  lawyerShareBps        Int                 @default(8000)
+  feeBearer             String              @default("lawyer")
+  eligibilityRules      Json
+  evidenceRequirements  Json
+  urgentRules           Json
+  exclusions            Json
+  matchingRules         Json
+  assessmentTemplate    Json
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  jurisdictionVersion   JurisdictionVersion @relation(fields: [jurisdictionVersionId], references: [id], onDelete: Cascade)
+  workflows             WorkflowVersion[]
+  intakeSessions        IntakeSession[]
+  matters               Matter[]
+  @@unique([jurisdictionVersionId, code, version])
+}
+
+model WorkflowVersion {
+  id                  String            @id @default(uuid()) @db.Uuid
+  serviceDefinitionId String            @db.Uuid
+  version             Int
+  status              ContentStatus     @default(DRAFT)
+  schema              Json
+  promptVersion       String
+  consentVersion      String
+  contentHash         String
+  approvedBy          String?
+  approvedAt          DateTime?
+  publishedAt         DateTime?
+  retiredAt           DateTime?
+  createdAt           DateTime          @default(now())
+  serviceDefinition   ServiceDefinition @relation(fields: [serviceDefinitionId], references: [id], onDelete: Cascade)
+  intakeSessions      IntakeSession[]
+  matters             Matter[]
+  @@unique([serviceDefinitionId, version])
+}
+
+model IntakeSession {
+  id                  String            @id @default(uuid()) @db.Uuid
+  clientUserId        String            @db.Uuid
+  serviceDefinitionId String            @db.Uuid
+  workflowVersionId   String            @db.Uuid
+  sourceChannel       MessageChannel
+  language            Language
+  tenancyRole         TenancyRole
+  countryCode         String
+  stateCode           String
+  localGovernmentArea String?
+  narrative           String?
+  desiredOutcome      String?
+  answers             Json              @default("{}")
+  structuredSummary   Json?
+  summaryConfirmedAt  DateTime?
+  submittedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  client              User              @relation("ClientIntakes", fields: [clientUserId], references: [id], onDelete: Cascade)
+  serviceDefinition   ServiceDefinition @relation(fields: [serviceDefinitionId], references: [id])
+  workflowVersion     WorkflowVersion   @relation(fields: [workflowVersionId], references: [id])
+  parties             Party[]
+  evidence            EvidenceItem[]
+  matter              Matter?
+  aiRuns              AIRun[]
+  @@index([clientUserId, createdAt])
+}
+
+model Party {
+  id              String        @id @default(uuid()) @db.Uuid
+  intakeSessionId String        @db.Uuid
+  role            String
+  name            String
+  normalizedName  String
+  phoneEncrypted  String?
+  emailEncrypted  String?
+  organization    String?
+  createdAt       DateTime      @default(now())
+  intakeSession   IntakeSession @relation(fields: [intakeSessionId], references: [id], onDelete: Cascade)
+  @@index([intakeSessionId, normalizedName])
+}
+
+model EvidenceItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  intakeSessionId String           @db.Uuid
+  uploadedById    String           @db.Uuid
+  objectKey       String           @unique
+  originalName    String
+  contentType     String
+  sizeBytes       Int
+  sha256          String?
+  status          AttachmentStatus @default(PENDING_UPLOAD)
+  rejectionReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  intakeSession   IntakeSession    @relation(fields: [intakeSessionId], references: [id], onDelete: Cascade)
+  attachments     Attachment[]
+  aiRuns          AIRun[]
+  @@index([intakeSessionId, status])
+}
+
+model ConsentRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  matterId       String?  @db.Uuid
+  consentType    String
+  version        String
+  language       Language
+  accepted       Boolean
+  evidence       Json
+  ipHash         String?
+  acceptedAt     DateTime @default(now())
+  withdrawnAt    DateTime?
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matter         Matter?  @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  @@index([userId, consentType, acceptedAt])
+}
+
+model Matter {
+  id                    String            @id @default(uuid()) @db.Uuid
+  reference             String            @unique
+  clientUserId          String            @db.Uuid
+  intakeSessionId       String            @unique @db.Uuid
+  jurisdictionId        String            @db.Uuid
+  serviceDefinitionId   String            @db.Uuid
+  workflowVersionId     String            @db.Uuid
+  state                 MatterState       @default(INTAKE_DRAFT)
+  urgency               UrgencyLevel      @default(STANDARD)
+  urgencyReasons        String[]
+  assignedLawyerId      String?           @db.Uuid
+  informationCompleteAt DateTime?
+  paidAt                DateTime?
+  slaStartedAt          DateTime?
+  dueAt                 DateTime?
+  deliveredAt           DateTime?
+  closedAt              DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  client                User              @relation("ClientMatters", fields: [clientUserId], references: [id])
+  assignedLawyer        LawyerProfile?    @relation("AssignedLawyerMatters", fields: [assignedLawyerId], references: [id])
+  intakeSession         IntakeSession     @relation(fields: [intakeSessionId], references: [id])
+  jurisdiction          Jurisdiction      @relation(fields: [jurisdictionId], references: [id])
+  serviceDefinition     ServiceDefinition @relation(fields: [serviceDefinitionId], references: [id])
+  workflowVersion       WorkflowVersion   @relation(fields: [workflowVersionId], references: [id])
+  urgencyAssessment     UrgencyAssessment?
+  matches               LawyerMatch[]
+  conflictChecks        ConflictCheck[]
+  engagements           Engagement[]
+  messages              Message[]
+  assessments           Assessment[]
+  payments              Payment[]
+  refunds               Refund[]
+  consents              ConsentRecord[]
+  notifications         Notification[]
+  feedback              Feedback[]
+  aiRuns                AIRun[]
+  humanReviews          HumanReview[]
+  auditEvents           AuditEvent[]
+  @@index([clientUserId, state])
+  @@index([assignedLawyerId, state])
+  @@index([dueAt, state])
+}
+
+model UrgencyAssessment {
+  id                   String       @id @default(uuid()) @db.Uuid
+  matterId             String       @unique @db.Uuid
+  level                UrgencyLevel
+  reasons              String[]
+  source               String
+  requiresHumanReview  Boolean      @default(false)
+  reviewedBy           String?
+  reviewedAt           DateTime?
+  createdAt            DateTime     @default(now())
+  matter               Matter       @relation(fields: [matterId], references: [id], onDelete: Cascade)
+}
+
+model LawyerMatch {
+  id             String        @id @default(uuid()) @db.Uuid
+  matterId       String        @db.Uuid
+  lawyerId       String        @db.Uuid
+  rank           Int
+  score          Decimal       @db.Decimal(8, 4)
+  reasons        Json
+  status         MatchStatus   @default(OFFERED)
+  offeredAt      DateTime      @default(now())
+  selectedAt     DateTime?
+  expiresAt      DateTime?
+  matter         Matter        @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  lawyer         LawyerProfile @relation(fields: [lawyerId], references: [id])
+  @@unique([matterId, lawyerId])
+  @@index([matterId, rank])
+}
+
+model ConflictCheck {
+  id              String           @id @default(uuid()) @db.Uuid
+  matterId        String           @db.Uuid
+  lawyerId        String           @db.Uuid
+  decision        ConflictDecision @default(PENDING)
+  reasonCode      String?
+  privateNote     String?
+  requestedAt     DateTime         @default(now())
+  decidedAt       DateTime?
+  matter          Matter           @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  lawyer          LawyerProfile    @relation(fields: [lawyerId], references: [id])
+  @@unique([matterId, lawyerId])
+}
+
+model Engagement {
+  id                String        @id @default(uuid()) @db.Uuid
+  matterId          String        @db.Uuid
+  lawyerId          String        @db.Uuid
+  termsVersion      String
+  acceptedByClientAt DateTime?
+  acceptedByLawyerAt DateTime?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  endReason         String?
+  createdAt         DateTime      @default(now())
+  matter            Matter        @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  lawyer            LawyerProfile @relation(fields: [lawyerId], references: [id])
+  @@index([matterId, createdAt])
+}
+
+model Message {
+  id                String           @id @default(uuid()) @db.Uuid
+  matterId          String           @db.Uuid
+  senderUserId      String?          @db.Uuid
+  channel           MessageChannel
+  direction         MessageDirection
+  body              String
+  providerMessageId String?          @unique
+  idempotencyKey    String           @unique
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  failureReason     String?
+  createdAt         DateTime         @default(now())
+  matter            Matter           @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  sender            User?            @relation("SentMessages", fields: [senderUserId], references: [id])
+  attachments       Attachment[]
+  @@index([matterId, createdAt])
+}
+
+model Attachment {
+  id             String           @id @default(uuid()) @db.Uuid
+  messageId      String?          @db.Uuid
+  evidenceItemId String?          @db.Uuid
+  objectKey      String           @unique
+  originalName   String
+  contentType    String
+  sizeBytes      Int
+  status         AttachmentStatus @default(QUARANTINED)
+  createdAt      DateTime         @default(now())
+  message        Message?         @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  evidenceItem   EvidenceItem?    @relation(fields: [evidenceItemId], references: [id], onDelete: Cascade)
+}
+
+model Assessment {
+  id                 String        @id @default(uuid()) @db.Uuid
+  matterId           String        @db.Uuid
+  lawyerId           String        @db.Uuid
+  version            Int
+  title              String
+  body               String
+  limitations        String
+  nextSteps          Json
+  draftSource        String
+  lawyerAttestedAt   DateTime?
+  deliveredAt        DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  matter             Matter        @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  lawyer             LawyerProfile @relation(fields: [lawyerId], references: [id])
+  @@unique([matterId, version])
+}
+
+model Payment {
+  id                   String          @id @default(uuid()) @db.Uuid
+  matterId             String          @db.Uuid
+  provider             PaymentProvider
+  status               PaymentStatus   @default(CREATED)
+  internalReference    String          @unique
+  providerReference    String?         @unique
+  checkoutUrl          String?
+  amountMinor          Int
+  currency             String          @default("NGN")
+  platformShareBps     Int
+  lawyerShareBps       Int
+  feeBearer            String
+  lawyerSubaccountId   String
+  serviceVersion       Int
+  jurisdictionVersion Int
+  verifiedAt           DateTime?
+  failedAt             DateTime?
+  rawVerification      Json?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  matter               Matter          @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  split                 PaymentSplit?
+  webhookEvents         PaymentWebhookEvent[]
+  refunds               Refund[]
+  @@index([matterId, status])
+}
+
+model PaymentSplit {
+  id                   String   @id @default(uuid()) @db.Uuid
+  paymentId            String   @unique @db.Uuid
+  grossAmountMinor     Int
+  providerFeeMinor     Int?
+  platformAmountMinor  Int?
+  lawyerAmountMinor    Int?
+  calculatedAt         DateTime?
+  settledAt            DateTime?
+  raw                  Json?
+  payment              Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
+model Refund {
+  id                String         @id @default(uuid()) @db.Uuid
+  matterId          String         @db.Uuid
+  paymentId         String         @db.Uuid
+  status            RefundStatus   @default(REQUESTED)
+  reason            String
+  amountMinor       Int
+  providerReference String?
+  requestedBy       String         @db.Uuid
+  requestedAt       DateTime       @default(now())
+  processedAt       DateTime?
+  matter            Matter         @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  payment           Payment        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
+model PaymentWebhookEvent {
+  id              String          @id @default(uuid()) @db.Uuid
+  paymentId       String?         @db.Uuid
+  provider        PaymentProvider
+  providerEventId String
+  eventType       String
+  signatureValid  Boolean
+  payloadHash     String
+  rawPayload      Json
+  processedAt     DateTime?
+  processingError String?
+  receivedAt      DateTime        @default(now())
+  payment         Payment?        @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  @@unique([provider, providerEventId])
+}
+
+model AIRun {
+  id                   String       @id @default(uuid()) @db.Uuid
+  intakeSessionId      String?      @db.Uuid
+  matterId             String?      @db.Uuid
+  evidenceItemId       String?      @db.Uuid
+  purpose              String
+  provider             String
+  model                String
+  promptVersion        String
+  schemaVersion        String
+  safetyIdentifierHash String
+  inputReferences      Json
+  status               AIRunStatus  @default(QUEUED)
+  latencyMs            Int?
+  inputTokens          Int?
+  outputTokens         Int?
+  confidence           Decimal?     @db.Decimal(5, 4)
+  errorCode            String?
+  createdAt            DateTime     @default(now())
+  startedAt            DateTime?
+  completedAt          DateTime?
+  intakeSession        IntakeSession? @relation(fields: [intakeSessionId], references: [id], onDelete: Cascade)
+  matter               Matter?      @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  evidenceItem         EvidenceItem? @relation(fields: [evidenceItemId], references: [id], onDelete: SetNull)
+  outputs              AIOutput[]
+  humanReviews         HumanReview[]
+}
+
+model AIOutput {
+  id             String   @id @default(uuid()) @db.Uuid
+  aiRunId        String   @db.Uuid
+  outputType     String
+  content        Json
+  contentHash    String
+  clientConfirmedAt DateTime?
+  createdAt      DateTime @default(now())
+  aiRun          AIRun    @relation(fields: [aiRunId], references: [id], onDelete: Cascade)
+}
+
+model HumanReview {
+  id             String            @id @default(uuid()) @db.Uuid
+  matterId       String?           @db.Uuid
+  aiRunId        String?           @db.Uuid
+  reviewerUserId String?           @db.Uuid
+  reason         String
+  status         HumanReviewStatus @default(OPEN)
+  correction     Json?
+  openedAt       DateTime          @default(now())
+  resolvedAt     DateTime?
+  matter         Matter?           @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  aiRun          AIRun?            @relation(fields: [aiRunId], references: [id], onDelete: Cascade)
+  reviewer       User?             @relation("HumanReviewer", fields: [reviewerUserId], references: [id])
+  @@index([status, openedAt])
+}
+
+model Notification {
+  id                String         @id @default(uuid()) @db.Uuid
+  userId            String         @db.Uuid
+  matterId          String?        @db.Uuid
+  channel           MessageChannel
+  templateKey       String
+  templateVersion   String
+  payload           Json
+  idempotencyKey    String         @unique
+  scheduledAt       DateTime       @default(now())
+  sentAt            DateTime?
+  failedAt          DateTime?
+  failureReason     String?
+  createdAt         DateTime       @default(now())
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matter            Matter?        @relation(fields: [matterId], references: [id], onDelete: Cascade)
+}
+
+model Feedback {
+  id          String   @id @default(uuid()) @db.Uuid
+  matterId    String   @db.Uuid
+  userId      String   @db.Uuid
+  rating      Int
+  comment     String?
+  complaint   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  matter      Matter   @relation(fields: [matterId], references: [id], onDelete: Cascade)
+  @@unique([matterId, userId])
+}
+
+model AuditEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  actorUserId   String?  @db.Uuid
+  matterId      String?  @db.Uuid
+  action        String
+  entityType    String
+  entityId      String
+  result        String
+  metadata      Json
+  previousHash  String?
+  eventHash     String   @unique
+  ipHash        String?
+  createdAt     DateTime @default(now())
+  actor         User?    @relation("AuditActor", fields: [actorUserId], references: [id])
+  matter        Matter?  @relation(fields: [matterId], references: [id], onDelete: SetNull)
+  @@index([entityType, entityId, createdAt])
+  @@index([matterId, createdAt])
+}

@@ -1,0 +1,8 @@
+{
+  "cli": { "version": ">= 16.0.0" },
+  "build": {
+    "internal": { "distribution": "internal", "android": { "buildType": "apk" }, "env": { "EXPO_PUBLIC_API_URL": "https://api-staging.example.invalid/v1" } },
+    "preview": { "distribution": "internal", "android": { "buildType": "apk" } },
+    "production": { "autoIncrement": true }
+  }
+}
