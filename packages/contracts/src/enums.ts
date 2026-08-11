@@ -1,8 +1,58 @@
 export const SUPPORTED_LANGUAGES = ["en", "pcm", "ha", "yo", "ig"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
-export const USER_ROLES = ["client", "lawyer", "admin", "super_admin"] as const;
+export const ASSIGNABLE_USER_ROLES = [
+  "client",
+  "lawyer",
+  "operations",
+  "owner",
+] as const;
+export type AssignableUserRole = (typeof ASSIGNABLE_USER_ROLES)[number];
+
+export const USER_ROLES = [
+  ...ASSIGNABLE_USER_ROLES,
+  "admin",
+  "super_admin",
+] as const;
 export type UserRole = (typeof USER_ROLES)[number];
+
+export const PROFESSIONAL_APPLICATION_STATES = [
+  "draft",
+  "submitted",
+  "information_requested",
+  "under_review",
+  "approved",
+  "declined",
+  "withdrawn",
+] as const;
+
+export const PROFESSIONAL_VERIFICATION_STATES = [
+  "pending",
+  "verified",
+  "expiring",
+  "expired",
+  "suspended",
+  "revoked",
+] as const;
+
+export const LEGAL_DOCUMENT_STATES = [
+  "draft",
+  "legal_review",
+  "approved",
+  "published",
+  "superseded",
+  "retired",
+] as const;
+
+export const CONVERSATION_STATES = [
+  "active",
+  "paused",
+  "awaiting_confirmation",
+  "human_review",
+  "completed",
+  "opted_out",
+  "deleted",
+] as const;
 
 export const TENANCY_ROLES = ["tenant", "landlord"] as const;
 export type TenancyRole = (typeof TENANCY_ROLES)[number];

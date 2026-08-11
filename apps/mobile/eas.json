@@ -1,8 +1,38 @@
 {
-  "cli": { "version": ">= 16.0.0" },
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "local" },
   "build": {
-    "internal": { "distribution": "internal", "android": { "buildType": "apk" }, "env": { "EXPO_PUBLIC_API_URL": "https://api-staging.example.invalid/v1" } },
-    "preview": { "distribution": "internal", "android": { "buildType": "apk" } },
-    "production": { "autoIncrement": true }
+    "internal": {
+      "distribution": "internal",
+      "channel": "internal",
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging",
+        "EXPO_PUBLIC_API_URL": "https://lex-staging-api.wispy-silence-1cb0.workers.dev/v1",
+        "EXPO_PUBLIC_REALTIME_URL": "https://lex-staging-realtime.wispy-silence-1cb0.workers.dev/v1"
+      }
+    },
+    "testflight": {
+      "distribution": "store",
+      "channel": "testflight",
+      "ios": { "resourceClass": "m-medium" },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging",
+        "LEX_REQUIRE_IOS_RELEASE_METADATA": "true"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "ios": { "resourceClass": "m-medium" },
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "LEX_REQUIRE_IOS_RELEASE_METADATA": "true"
+      }
+    }
+  },
+  "submit": {
+    "testflight": { "ios": {} },
+    "production": { "ios": {} }
   }
 }

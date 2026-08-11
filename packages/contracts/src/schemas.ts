@@ -11,6 +11,8 @@ import {
   TENANCY_ROLES,
   URGENCY_LEVELS,
   USER_ROLES,
+  ASSIGNABLE_USER_ROLES,
+  PROFESSIONAL_APPLICATION_STATES,
 } from "./enums.js";
 
 export const e164PhoneSchema = z
@@ -136,6 +138,85 @@ export const lawyerApplicationSchema = z.object({
   tenancyRoles: z.array(z.enum(TENANCY_ROLES)).default([]),
   urgentAvailable: z.boolean().default(false),
 });
+
+export const professionalApplicationSchema = z.object({
+  legalName: z.string().trim().min(2).max(200),
+  publicName: z.string().trim().min(2).max(150),
+  professionalEmail: emailSchema,
+  professionalPhone: e164PhoneSchema,
+  dateOfBirth: z.iso.date().optional(),
+  supremeCourtNumber: z.string().trim().min(3).max(80),
+  yearOfCall: z.number().int().min(1900).max(new Date().getFullYear()),
+  jurisdictionOfCall: z.string().trim().min(2).max(120).default("Nigeria"),
+  firmName: z.string().trim().max(200).optional(),
+  officeAddress: z.string().trim().max(500).optional(),
+  website: z.url().optional(),
+  biography: z.string().trim().min(30).max(3_000),
+  languages: z.array(z.enum(SUPPORTED_LANGUAGES)).min(1),
+  stateCodes: z.array(z.string().trim().min(2).max(20)).min(1),
+  practiceAreaCodes: z.array(z.string().trim().min(2).max(100)).min(1),
+  consultationModes: z
+    .array(z.enum(["live_text", "voice_note", "secure_message"]))
+    .min(1),
+  weeklyCapacity: z.number().int().min(1).max(100).default(5),
+  urgentAvailable: z.boolean().default(false),
+  conductDeclaration: z.literal(true),
+  disciplinaryDisclosure: z.string().trim().max(5_000).optional(),
+  termsVersion: z.string().trim().min(1).max(100),
+});
+
+export const professionalApplicationReviewSchema = z.object({
+  decision: z.enum([
+    "information_requested",
+    "approved",
+    "declined",
+    "suspended",
+    "renewed",
+  ]),
+  reason: z.string().trim().min(5).max(5_000),
+  evidenceReference: z.string().trim().max(1_000).optional(),
+  licenceExpiresAt: z.iso.datetime({ offset: true }).optional(),
+});
+
+export const activeRoleSchema = z.object({
+  role: z.enum(ASSIGNABLE_USER_ROLES),
+});
+
+export const legalAcceptanceSchema = z.object({
+  documentVersionId: idSchema,
+  accepted: z.literal(true),
+  channel: z.enum(["mobile", "web", "whatsapp"]),
+  language: z.enum(SUPPORTED_LANGUAGES),
+});
+
+export const cookiePreferenceSchema = z.object({
+  analytics: z.boolean().default(false),
+  preferences: z.boolean().default(false),
+  marketing: z.boolean().default(false),
+  policyVersion: z.string().trim().min(1).max(100),
+});
+
+export const createAiIntakeSessionSchema = z.object({
+  channel: z.enum(["mobile", "web", "whatsapp"]).default("mobile"),
+  language: z.enum(SUPPORTED_LANGUAGES),
+  aiDisclosureAccepted: z.literal(true),
+  aiDisclosureVersion: z.string().trim().min(1).max(100),
+});
+
+export const aiIntakeMessageSchema = z.object({
+  body: z.string().trim().min(1).max(10_000),
+  clientMessageId: z.string().trim().min(8).max(200),
+});
+
+export const aiIntakeConfirmationSchema = z.object({
+  practiceAreaCode: z.string().trim().min(2).max(100),
+  confirmed: z.literal(true),
+  corrections: z.string().trim().max(5_000).optional(),
+});
+
+export const professionalApplicationStateSchema = z.enum(
+  PROFESSIONAL_APPLICATION_STATES,
+);
 
 export const conflictDecisionSchema = z.object({
   decision: z.enum(["accepted", "declined"]),
@@ -303,6 +384,9 @@ export type UpdateIntakeInput = z.infer<typeof updateIntakeSchema>;
 export type StructuredIntake = z.infer<typeof structuredIntakeSchema>;
 export type ConfirmIntakeInput = z.infer<typeof confirmIntakeSchema>;
 export type LawyerApplicationInput = z.infer<typeof lawyerApplicationSchema>;
+export type ProfessionalApplicationInput = z.infer<
+  typeof professionalApplicationSchema
+>;
 export type ConflictDecisionInput = z.infer<typeof conflictDecisionSchema>;
 export type AssessmentInput = z.infer<typeof assessmentSchema>;
 export type InitializePaymentInput = z.infer<typeof initializePaymentSchema>;

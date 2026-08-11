@@ -8,6 +8,8 @@ The test release guides a client from typed or voice intake through client-confi
 
 - Android client plus iOS-ready Expo source and Gradle-native Android project.
 - Responsive lawyer and operations workspace.
+- Assigned Client, Lawyer, Operations and Owner roles with MFA-protected web workspace switching.
+- Progressive collapsible intake, visible Ask Lex AI assistance and a versioned Legal Centre.
 - All 36 states and the FCT, with a catalogue of 30+ granular practice areas.
 - Adult individual, safeguarded minor, and verified-organization account contexts.
 - English, Pidgin, Hausa, Yoruba, and Igbo intake; English is the authoritative lawyer-facing record.
@@ -49,4 +51,4 @@ pnpm.cmd cf:dry-run
 pnpm.cmd apk
 ```
 
-See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), [docs/MVP_PLAN.md](docs/MVP_PLAN.md), [docs/DELIVERY_STATUS.md](docs/DELIVERY_STATUS.md), and [docs/TEST_REPORT.md](docs/TEST_REPORT.md). Never place credentials in source, APK configuration, logs, or committed environment files.
+See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), [docs/MVP_PLAN.md](docs/MVP_PLAN.md), [docs/LEGAL_CENTRE_DRAFTS.md](docs/LEGAL_CENTRE_DRAFTS.md), [docs/DELIVERY_STATUS.md](docs/DELIVERY_STATUS.md), and [docs/TEST_REPORT.md](docs/TEST_REPORT.md). Never place credentials in source, APK configuration, logs, or committed environment files.

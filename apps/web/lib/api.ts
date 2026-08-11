@@ -5,7 +5,9 @@ export const REALTIME_URL =
 
 export interface SessionUser {
   id: string;
-  role: "client" | "lawyer" | "admin" | "super_admin";
+  role: "client" | "lawyer" | "operations" | "owner";
+  activeRole?: "client" | "lawyer" | "operations" | "owner";
+  roles?: Array<"client" | "lawyer" | "operations" | "owner">;
 }
 export interface Session {
   accessToken: string;

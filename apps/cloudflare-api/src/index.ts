@@ -6,6 +6,7 @@ import { openApiDocument } from "./openapi.js";
 import paymentRoutes from "./payment-routes.js";
 import pilotRoutes from "./pilot-routes.js";
 import fullSpectrumRoutes from "./full-spectrum-routes.js";
+import experienceRoutes from "./experience-routes.js";
 import type { Env, Variables } from "./types.js";
 import webhookRoutes from "./webhook-routes.js";
 
@@ -37,6 +38,7 @@ app.get("/v1/openapi.json", (context) => context.json(openApiDocument));
 app.route("/v1/auth", authRoutes);
 app.route("/v1/payments", paymentRoutes);
 app.route("/v1/webhooks", webhookRoutes);
+app.route("/v1", experienceRoutes);
 app.route("/v1", fullSpectrumRoutes);
 app.route("/v1", pilotRoutes);
 

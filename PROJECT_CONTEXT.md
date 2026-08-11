@@ -1,5 +1,9 @@
 # Project Context
 
+## Current implementation focus (2026-08-11)
+
+The nationwide full-spectrum contract now includes assigned multi-role Owner, Operations and Lawyer workspaces; approval-controlled professional onboarding; progressive client intake; visible Ask Lex AI assistance; a versioned Legal Centre; guided WhatsApp architecture; and iOS/TestFlight readiness without upload. Administration remains a separate responsive web workspace. Role switching is limited to server-assigned roles and public registration remains Client-only.
+
 ## Founding contract
 
 The lawyer co-founder originated the Nigerian legal-access idea and has more than 15 years of practice experience. The user is improving the concept and leading the build. Lex launches in Nigeria first and expands through separately reviewed country packages.
@@ -38,4 +42,4 @@ Approved uses: classification suggestions, missing-question suggestions, transcr
 
 ## External gates
 
-Staging uses synthetic data. Real provider tests require Meta, OpenAI credit, Paystack, Flutterwave, Postmark, and Expo/FCM/APNs credentials. iOS distribution requires Apple credentials. Public launch additionally requires the lawyer co-founder's recorded legal/commercial approvals and native-language/privacy review.
+Staging uses synthetic data. OpenAI guided intake is provider-verified; transcription still needs its own provider exercise. Meta, Paystack, Flutterwave, Postmark, and Expo/FCM/APNs tests require their credentials. iOS distribution requires Apple credentials. Public launch additionally requires the lawyer co-founder's recorded legal/commercial approvals and native-language/privacy review.

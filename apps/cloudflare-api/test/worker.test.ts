@@ -172,4 +172,143 @@ describe("Lex Worker", () => {
       message: "A verified client subject is required",
     });
   });
+
+  it("exposes assigned client roles and versioned staging legal documents", async () => {
+    const me = await SELF.fetch("https://lex.test/v1/auth/me", {
+      headers: { authorization: `Bearer ${clientAccessToken}` },
+    });
+    expect(me.status).toBe(200);
+    await expect(me.json()).resolves.toMatchObject({
+      activeRole: "client",
+      roles: ["client"],
+    });
+    const legal = await SELF.fetch(
+      "https://lex.test/v1/legal/documents?language=en",
+      { headers: { authorization: `Bearer ${clientAccessToken}` } },
+    );
+    expect(legal.status).toBe(200);
+    const payload = await legal.json<{
+      items: Array<{ code: string; status: string }>;
+    }>();
+    expect(payload.items.length).toBeGreaterThanOrEqual(19);
+    expect(payload.items.some((item) => item.code === "privacy-notice")).toBe(
+      true,
+    );
+    expect(payload.items.every((item) => item.status === "draft")).toBe(true);
+  });
+
+  it("records Ask Lex disclosure, idempotent client turns and human review", async () => {
+    const created = await SELF.fetch("https://lex.test/v1/ai/intake-sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${clientAccessToken}`,
+      },
+      body: JSON.stringify({
+        channel: "mobile",
+        language: "en",
+        aiDisclosureAccepted: true,
+        aiDisclosureVersion: "ai-test-v1",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const session = await created.json<{ id: string; provider: string }>();
+    expect(session.provider).toBe("openai");
+    const input = {
+      body: "Police detained my brother in Lagos this morning.",
+      clientMessageId: "worker-test-message-0001",
+    };
+    const first = await SELF.fetch(
+      `https://lex.test/v1/ai/intake-sessions/${session.id}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${clientAccessToken}`,
+        },
+        body: JSON.stringify(input),
+      },
+    );
+    expect(first.status).toBe(202);
+    const replay = await SELF.fetch(
+      `https://lex.test/v1/ai/intake-sessions/${session.id}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${clientAccessToken}`,
+        },
+        body: JSON.stringify(input),
+      },
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({ duplicate: true });
+    const handoff = await SELF.fetch(
+      `https://lex.test/v1/ai/intake-sessions/${session.id}/human-review`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${clientAccessToken}` },
+      },
+    );
+    expect(handoff.status).toBe(201);
+    await expect(handoff.json()).resolves.toMatchObject({ state: "open" });
+  });
+
+  it("keeps founder role bootstrap isolated, authenticated and auditable", async () => {
+    const unauthorized = await SELF.fetch(
+      "https://lex.test/v1/internal/founder-bootstrap",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ founders: [] }),
+      },
+    );
+    expect(unauthorized.status).not.toBe(200);
+    const response = await SELF.fetch(
+      "https://lex.test/v1/internal/founder-bootstrap",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-founder-bootstrap-token":
+            "local-founder-bootstrap-test-token-at-least-32-characters",
+        },
+        body: JSON.stringify({
+          founders: [
+            {
+              label: "Synthetic primary owner",
+              phone: "+15550000001",
+              email: "primary-owner@lex.test",
+              roles: ["client", "owner"],
+              defaultRole: "owner",
+            },
+            {
+              label: "Synthetic partner owner lawyer",
+              phone: "+15550000002",
+              email: "partner-owner@lex.test",
+              roles: ["owner", "lawyer"],
+              defaultRole: "lawyer",
+            },
+          ],
+        }),
+      },
+    );
+    expect(response.status, await response.clone().text()).toBe(200);
+    const payload = await response.json<{
+      bootstrapped: Array<{ userId: string }>;
+    }>();
+    expect(payload.bootstrapped).toHaveLength(2);
+    const partner = await env.DB.prepare(
+      "SELECT default_web_role,mfa_enabled FROM users WHERE id=?",
+    )
+      .bind(payload.bootstrapped[1]!.userId)
+      .first<{ default_web_role: string; mfa_enabled: number }>();
+    expect(partner).toEqual({ default_web_role: "lawyer", mfa_enabled: 0 });
+    const roles = await env.DB.prepare(
+      "SELECT role FROM user_role_assignments WHERE user_id=? ORDER BY role",
+    )
+      .bind(payload.bootstrapped[1]!.userId)
+      .all<{ role: string }>();
+    expect(roles.results.map((item) => item.role)).toEqual(["lawyer", "owner"]);
+  });
 });

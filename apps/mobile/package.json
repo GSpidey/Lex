@@ -1,6 +1,6 @@
 {
   "name": "@lex/mobile",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "apk": "node ../../scripts/validate-mobile-endpoint.mjs && cd android && gradlew.bat assembleRelease"
+    "apk": "node ../../scripts/validate-mobile-endpoint.mjs && cd android && gradlew.bat assembleRelease",
+    "ios:validate": "node ../../scripts/validate-ios-release.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

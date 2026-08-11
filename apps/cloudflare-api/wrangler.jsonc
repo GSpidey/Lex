@@ -15,17 +15,11 @@
     "STAGING_TEST_LOGIN_ENABLED": "true",
     "STAGING_TEST_PHONE_E164": "+2348000000001",
     "EMAIL_DELIVERY_ENABLED": "false",
+    "OPENAI_PROVIDER_STATUS": "provider_verified_guided_intake",
     "META_GRAPH_VERSION": "v24.0",
     "META_AUTH_TEMPLATE": "lex_authentication",
     "META_AUTH_LOCALE": "en",
     "MAX_EVIDENCE_BYTES": "20971520",
-  },
-  "secrets": {
-    "required": [
-      "AUTH_HMAC_PEPPER",
-      "FIELD_ENCRYPTION_KEY",
-      "STAGING_TEST_OTP_CODE",
-    ],
   },
   "d1_databases": [
     {

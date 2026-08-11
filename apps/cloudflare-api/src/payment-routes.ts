@@ -204,7 +204,7 @@ payments.post(
 payments.get("/:id", async (context) => {
   const user = context.get("user");
   const payment = await context.env.DB.prepare(
-    "SELECT p.id,p.matter_id,p.provider,p.internal_reference,p.provider_reference,p.state,p.amount_minor,p.currency,p.platform_share_bps,p.lawyer_share_bps,p.fee_bearer,p.verified_at,p.created_at,p.updated_at FROM payments p JOIN matters m ON m.id=p.matter_id WHERE p.id=? AND (m.client_user_id=? OR ? IN ('admin','super_admin') OR EXISTS(SELECT 1 FROM lawyer_profiles l WHERE l.id=m.selected_lawyer_id AND l.user_id=?))",
+    "SELECT p.id,p.matter_id,p.provider,p.internal_reference,p.provider_reference,p.state,p.amount_minor,p.currency,p.platform_share_bps,p.lawyer_share_bps,p.fee_bearer,p.verified_at,p.created_at,p.updated_at FROM payments p JOIN matters m ON m.id=p.matter_id WHERE p.id=? AND (m.client_user_id=? OR ? IN ('operations','owner') OR EXISTS(SELECT 1 FROM lawyer_profiles l WHERE l.id=m.selected_lawyer_id AND l.user_id=?))",
   )
     .bind(context.req.param("id"), user.id, user.role, user.id)
     .first();

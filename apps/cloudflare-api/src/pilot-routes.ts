@@ -831,7 +831,7 @@ routes.get("/matters", async (context) => {
         : "SELECT m.*,i.practice_area_code,i.client_type FROM matters m JOIN intakes i ON i.id=m.intake_id ORDER BY m.created_at DESC LIMIT 200";
   const statement = context.env.DB.prepare(query);
   const result =
-    user.role === "admin" || user.role === "super_admin"
+    user.role === "operations" || user.role === "owner"
       ? await statement.all()
       : await statement.bind(user.id).all();
   return context.json(result.results);

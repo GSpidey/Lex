@@ -16,6 +16,9 @@ Lex provides nationwide Nigerian intake and synthetic service testing across a g
 8. Complete app/WhatsApp continuity and five-language typed/voice intake; connect Postmark and Expo Push through provider adapters.
 9. Rebuild the client home and lawyer/operations workspace around general legal access with no dead navigation.
 10. Verify migrations, authorization, idempotency, replay handling, R2 privacy, queues/DLQ, realtime reconnect, provider contracts, accessibility, Gradle APK, and iOS-ready configuration.
+11. Add assigned multi-role accounts, complete legal-professional verification, Owner provider diagnostics, Legal Centre drafts and dual-control production gates.
+12. Convert the client entry journey to progressive accessible accordions and expose Ask Lex with correction, confirmation, fallback and human review.
+13. Prepare internal, TestFlight and production EAS profiles plus iOS privacy/metadata validation without uploading a build.
 
 ## Cloudflare staging
 

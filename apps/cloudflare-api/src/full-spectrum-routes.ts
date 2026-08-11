@@ -652,7 +652,7 @@ routes.get("/engagements/:id", async (context) => {
   const engagement = await context.env.DB.prepare(
     `SELECT e.* FROM representation_engagements e
       LEFT JOIN lawyer_profiles l ON l.id=e.lawyer_id
-     WHERE e.id=? AND (e.client_user_id=? OR l.user_id=? OR ? IN ('admin','super_admin'))`,
+     WHERE e.id=? AND (e.client_user_id=? OR l.user_id=? OR ? IN ('operations','owner'))`,
   )
     .bind(context.req.param("id"), user.id, user.id, user.role)
     .first<Record<string, unknown>>();

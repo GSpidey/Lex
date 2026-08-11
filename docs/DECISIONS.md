@@ -21,11 +21,16 @@
 | Cloudflare spend  | Approved                        | Free plan first; no paid upgrade without explicit user approval                                                                                            |
 | Data              | Synthetic staging only          | No real client facts, production money or public legal claims pending cross-border/privacy/legal review                                                    |
 | Publication       | Gated                           | Legal content requires recorded lawyer-co-founder approval; translations require native review; public launch requires all provider/legal gates            |
+| Administration    | Approved                        | One responsive web codebase exposes distinct Owner, Operations and Lawyer workspaces; dense privileged work does not move into the client app              |
+| Assigned roles    | Approved                        | Public accounts receive Client only; Lawyer follows approval; Owner and Operations are assigned only; switching rotates sessions and never creates a role  |
+| Founder staging   | Approved exception              | Primary founder is Client plus Owner; partner is Owner plus Lawyer, but professional marketplace eligibility remains separately gated                      |
+| AI visibility     | Approved                        | Ask Lex and WhatsApp show AI assistance, client correction and confirmation, deterministic fallback, human review and routing challenge                    |
+| iOS preparation   | Approved without upload         | TestFlight profiles, privacy manifest, metadata and release guards may be prepared; no App Store record or upload is authorized                            |
 
 ## External prerequisites
 
 - Meta test number/app credentials, approved templates and webhook subscription.
-- OpenAI account credit for transcription/extraction tests.
+- OpenAI guided intake is provider-verified with synthetic data; transcription still needs a separate real provider test.
 - Paystack and Flutterwave sandbox keys and verified lawyer test subaccounts.
 - Postmark Developer token/sender and Expo push credentials.
 - Apple credentials for iOS signing.

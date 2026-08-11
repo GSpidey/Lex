@@ -93,11 +93,15 @@ async function processMessage(jobId: string, env: Env) {
       .bind(now(), now(), jobId)
       .run();
   } catch (error) {
+    const safeError =
+      error instanceof Error
+        ? `${error.name}:${error.message}`.slice(0, 240)
+        : "job_error";
     await env.DB.prepare(
       "UPDATE jobs SET state='retry',locked_at=NULL,last_error=?,available_at=?,updated_at=? WHERE id=?",
     )
       .bind(
-        error instanceof Error ? error.name : "job_error",
+        safeError,
         new Date(Date.now() + 30_000).toISOString(),
         now(),
         jobId,
@@ -125,6 +129,7 @@ async function dispatch(
   if (kind === "meta_status" || kind === "meta_inbound")
     return applyMetaEvent(payload, env);
   if (kind === "ai_intake_extraction") return extractIntake(payload, env);
+  if (kind === "ai_guided_intake") return guidedIntake(payload, env);
   throw new Error("UnsupportedJobKind");
 }
 
@@ -396,6 +401,280 @@ async function extractIntake(
   ]);
   // The deterministic client-visible summary remains unchanged. The AI output
   // is a suggestion for human/client review and cannot silently rewrite facts.
+}
+
+async function guidedIntake(
+  payload: Record<string, unknown>,
+  env: Env,
+): Promise<void> {
+  const conversationId = String(payload.conversationId ?? "");
+  const clientTurnId = String(payload.clientTurnId ?? "");
+  const conversation = await env.DB.prepare(
+    "SELECT id,user_id,channel,language,state,version FROM channel_conversations WHERE id=?",
+  )
+    .bind(conversationId)
+    .first<{
+      id: string;
+      user_id: string;
+      channel: string;
+      language: string;
+      state: string;
+      version: number;
+    }>();
+  if (
+    !conversation ||
+    ["completed", "deleted", "opted_out"].includes(conversation.state)
+  )
+    return;
+  const existing = await env.DB.prepare(
+    "SELECT id FROM conversation_turns WHERE ai_run_id=?",
+  )
+    .bind(`guided-${clientTurnId}`)
+    .first();
+  if (existing) return;
+
+  const turns = await env.DB.prepare(
+    `SELECT actor,body FROM conversation_turns
+      WHERE conversation_id=? AND actor IN ('client','assistant')
+      ORDER BY created_at DESC LIMIT 20`,
+  )
+    .bind(conversationId)
+    .all<{ actor: string; body: string }>();
+  const catalogue = await env.DB.prepare(
+    "SELECT code,name,group_name,description FROM practice_areas WHERE active=1 ORDER BY group_name,sort_order",
+  ).all<{
+    code: string;
+    name: string;
+    group_name: string;
+    description: string;
+  }>();
+  const chronologicalTurns = [...turns.results].reverse();
+  const runId = crypto.randomUUID();
+  const started = Date.now();
+  const model = env.OPENAI_INTAKE_MODEL || "gpt-5.6-terra";
+  let output: {
+    response: string;
+    suggestedPracticeAreaCodes: string[];
+    knownFacts: string[];
+    missingInformation: string[];
+    urgencySignals: string[];
+    readyToConfirm: boolean;
+    requiresHumanReview: boolean;
+    confidenceMillis: number;
+  };
+  let usage: Record<string, unknown> = {};
+
+  if (!env.OPENAI_API_KEY) {
+    output = deterministicGuidedReply(chronologicalTurns);
+  } else {
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "response",
+        "suggestedPracticeAreaCodes",
+        "knownFacts",
+        "missingInformation",
+        "urgencySignals",
+        "readyToConfirm",
+        "requiresHumanReview",
+        "confidenceMillis",
+      ],
+      properties: {
+        response: { type: "string" },
+        suggestedPracticeAreaCodes: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: 3,
+        },
+        knownFacts: { type: "array", items: { type: "string" } },
+        missingInformation: { type: "array", items: { type: "string" } },
+        urgencySignals: { type: "array", items: { type: "string" } },
+        readyToConfirm: { type: "boolean" },
+        requiresHumanReview: { type: "boolean" },
+        confidenceMillis: { type: "integer", minimum: 0, maximum: 1000 },
+      },
+    };
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        safety_identifier: `lex-guided-${await hmac(conversation.user_id, env.AUTH_HMAC_PEPPER)}`,
+        instructions:
+          "You are Lex AI-assisted legal intake for Nigeria. Organize only the client's facts and ask at most one short, bounded clarification question per response. Never provide legal advice, predict outcomes, calculate deadlines, recommend a specific lawyer, or say a legal conclusion is certain. Detect emergencies, detention, violence, child safety, self-harm, and safeguarding risk and require human review. Suggest only catalogue codes provided. When the issue is sufficiently clear, summarize the likely category and ask the client to confirm or correct it. Reply in the client's requested language while keeping extracted facts in English.",
+        input: JSON.stringify({
+          language: conversation.language,
+          turns: chronologicalTurns,
+          practiceAreaCatalogue: catalogue.results,
+        }),
+        text: {
+          format: {
+            type: "json_schema",
+            name: "lex_guided_intake_v1",
+            strict: true,
+            schema,
+          },
+        },
+      }),
+    });
+    const body = (await response.json()) as {
+      output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+      usage?: Record<string, unknown>;
+      error?: { message?: string; code?: string };
+    };
+    if (!response.ok) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          event: "openai_guided_intake_failed",
+          status: response.status,
+          code: body.error?.code ?? "unknown",
+        }),
+      );
+      output = deterministicGuidedReply(chronologicalTurns);
+    } else {
+      const outputText = body.output
+        ?.flatMap((item) => item.content ?? [])
+        .find((item) => item.type === "output_text")?.text;
+      if (!outputText) throw new Error("OpenAIGuidedOutputMissing");
+      output = JSON.parse(outputText) as typeof output;
+      usage = body.usage ?? {};
+    }
+  }
+
+  const validCodes = new Set(catalogue.results.map((item) => item.code));
+  output.suggestedPracticeAreaCodes = output.suggestedPracticeAreaCodes.filter(
+    (code) => validCodes.has(code),
+  );
+  const humanReview =
+    output.requiresHumanReview ||
+    output.urgencySignals.length > 0 ||
+    output.confidenceMillis < 650;
+  const nextState = humanReview
+    ? "human_review"
+    : output.readyToConfirm
+      ? "awaiting_confirmation"
+      : "active";
+  const timestamp = now();
+  const statements = [
+    env.DB.prepare(
+      `INSERT INTO ai_runs
+       (id,purpose,model,prompt_version,schema_version,input_refs_json,output_json,confidence_millis,requires_human_review,token_use_json,latency_ms,created_at)
+       VALUES (?,'guided_intake',?,'guided-intake-v1','guided-intake-output-v1',?,?,?,?,?,?,?)`,
+    ).bind(
+      runId,
+      env.OPENAI_API_KEY ? model : "deterministic-fallback-v1",
+      JSON.stringify({ conversationId, clientTurnId }),
+      JSON.stringify(output),
+      Math.max(0, Math.min(1000, output.confidenceMillis)),
+      humanReview ? 1 : 0,
+      JSON.stringify(usage),
+      Date.now() - started,
+      timestamp,
+    ),
+    env.DB.prepare(
+      `INSERT INTO conversation_turns
+       (id,conversation_id,actor,body,ai_run_id,status,created_at)
+       VALUES (?,?,'assistant',?,?,'needs_confirmation',?)`,
+    ).bind(
+      crypto.randomUUID(),
+      conversationId,
+      output.response,
+      runId,
+      timestamp,
+    ),
+    env.DB.prepare(
+      "UPDATE channel_conversations SET state=?,classification_json=?,version=version+1,updated_at=? WHERE id=?",
+    ).bind(
+      nextState,
+      JSON.stringify({
+        suggestedPracticeAreaCodes: output.suggestedPracticeAreaCodes,
+        knownFacts: output.knownFacts,
+        missingInformation: output.missingInformation,
+        urgencySignals: output.urgencySignals,
+        readyToConfirm: output.readyToConfirm,
+      }),
+      timestamp,
+      conversationId,
+    ),
+  ];
+  if (humanReview) {
+    statements.push(
+      env.DB.prepare(
+        "INSERT INTO conversation_handoffs (id,conversation_id,reason,state,created_at) VALUES (?,?,'ai_safety_or_uncertainty','open',?)",
+      ).bind(crypto.randomUUID(), conversationId, timestamp),
+    );
+  }
+  await env.DB.batch(statements);
+  if (conversation.channel === "whatsapp") {
+    const contact = await env.DB.prepare(
+      "SELECT phone_encrypted FROM users WHERE id=?",
+    )
+      .bind(conversation.user_id)
+      .first<{ phone_encrypted: string | null }>();
+    if (contact?.phone_encrypted) {
+      const suggestions = catalogue.results
+        .filter((item) => output.suggestedPracticeAreaCodes.includes(item.code))
+        .map((item) => item.name)
+        .join(", ");
+      await sendWhatsAppText(
+        env,
+        await decrypt(contact.phone_encrypted, env.FIELD_ENCRYPTION_KEY),
+        `${output.response}${suggestions ? `\nSuggested categories: ${suggestions}. Reply with the closest category to confirm or keep explaining.` : ""}`,
+      );
+    }
+  }
+}
+
+async function queueGuidedIntake(
+  env: Env,
+  conversationId: string,
+  clientTurnId: string,
+) {
+  const id = crypto.randomUUID();
+  const timestamp = now();
+  const inserted = await env.DB.prepare(
+    `INSERT OR IGNORE INTO jobs
+     (id,kind,queue_name,idempotency_key,payload_json,state,attempts,available_at,created_at,updated_at)
+     VALUES (?,'ai_guided_intake','jobs',?,?,'queued',0,?,?,?)`,
+  )
+    .bind(
+      id,
+      `ai-guided:${clientTurnId}`,
+      JSON.stringify({ conversationId, clientTurnId }),
+      timestamp,
+      timestamp,
+      timestamp,
+    )
+    .run();
+  if ((inserted.meta.changes ?? 0) === 1)
+    await env.JOBS_QUEUE.send({ jobId: id });
+}
+
+function deterministicGuidedReply(
+  turns: Array<{ actor: string; body: string }>,
+) {
+  const clientTurns = turns.filter((turn) => turn.actor === "client");
+  return {
+    response:
+      clientTurns.length < 2
+        ? "Thank you. I can organize this for a lawyer, but I cannot give legal advice. What happened, where in Nigeria did it happen, and is anyone in immediate danger or detention?"
+        : "I have organized what you shared. Please review the details and choose or confirm the closest legal issue from the catalogue. You can also request a human review.",
+    suggestedPracticeAreaCodes: [] as string[],
+    knownFacts: clientTurns.map((turn) => turn.body).slice(-5),
+    missingInformation:
+      clientTurns.length < 2
+        ? ["location", "key dates", "desired outcome", "urgency"]
+        : ["confirmed practice area"],
+    urgencySignals: [] as string[],
+    readyToConfirm: clientTurns.length >= 2,
+    requiresHumanReview: false,
+    confidenceMillis: clientTurns.length >= 2 ? 700 : 400,
+  };
 }
 
 async function reconcilePayment(payload: Record<string, unknown>, env: Env) {
@@ -672,6 +951,8 @@ type WhatsAppCursor = {
   practiceAreaCode?: string;
   narrative?: string;
   desiredOutcome?: string;
+  aiConversationId?: string;
+  pausedState?: string;
 };
 
 async function applyInboundWhatsApp(
@@ -719,6 +1000,9 @@ async function applyInboundWhatsApp(
       env.DB.prepare(
         "INSERT INTO notification_preferences (user_id,whatsapp,push,email,updated_at) VALUES (?,1,0,0,?)",
       ).bind(user.id, timestamp),
+      env.DB.prepare(
+        "INSERT INTO user_role_assignments (id,user_id,role,status,assignment_source,assigned_at) VALUES (?,?,'client','active','whatsapp_registration',?)",
+      ).bind(crypto.randomUUID(), user.id, timestamp),
     ]);
   }
   const channelHash = await hmac(`whatsapp:${e164}`, env.AUTH_HMAC_PEPPER);
@@ -804,6 +1088,92 @@ async function applyInboundWhatsApp(
     return;
   }
   const cursor = JSON.parse(session.cursor_json || "{}") as WhatsAppCursor;
+  if (/^pause$/iu.test(incomingText)) {
+    cursor.pausedState = session.state;
+    await updateWhatsAppSession(
+      env,
+      session.id,
+      "paused",
+      session.locale,
+      cursor,
+      message.id,
+    );
+    await sendWhatsAppText(
+      env,
+      e164,
+      "Your Lex enquiry is paused. Reply RESUME to continue, DELETE to request deletion review, or STOP to opt out.",
+    );
+    return;
+  }
+  if (session.state === "paused") {
+    if (!/^resume$/iu.test(incomingText)) {
+      await sendWhatsAppText(
+        env,
+        e164,
+        "This enquiry is paused. Reply RESUME to continue.",
+      );
+      return;
+    }
+    await updateWhatsAppSession(
+      env,
+      session.id,
+      cursor.pausedState ?? "choose_practice",
+      session.locale,
+      cursor,
+      message.id,
+    );
+    await sendWhatsAppText(
+      env,
+      e164,
+      "Your Lex enquiry has resumed. Continue in your own words.",
+    );
+    return;
+  }
+  if (/^human$/iu.test(incomingText) && cursor.aiConversationId) {
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO conversation_handoffs (id,conversation_id,reason,state,created_at) VALUES (?,?,'whatsapp_client_requested_human','open',?)",
+      ).bind(crypto.randomUUID(), cursor.aiConversationId, timestamp),
+      env.DB.prepare(
+        "UPDATE channel_conversations SET state='human_review',version=version+1,updated_at=? WHERE id=?",
+      ).bind(timestamp, cursor.aiConversationId),
+    ]);
+    await sendWhatsAppText(
+      env,
+      e164,
+      "Human review has been requested. Lex is not an emergency service; use appropriate local emergency or safety resources if anyone is in immediate danger.",
+    );
+    return;
+  }
+  if (/^delete$/iu.test(incomingText)) {
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO privacy_requests (id,user_id,type,status,details,due_at,version,created_at,updated_at) VALUES (?,?,'deletion','open','WhatsApp DELETE command',?,1,?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        user.id,
+        new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString(),
+        timestamp,
+        timestamp,
+      ),
+      env.DB.prepare(
+        "UPDATE whatsapp_intake_sessions SET state='expired',updated_at=? WHERE id=?",
+      ).bind(timestamp, session.id),
+      ...(cursor.aiConversationId
+        ? [
+            env.DB.prepare(
+              "UPDATE channel_conversations SET state='deleted',version=version+1,updated_at=? WHERE id=?",
+            ).bind(timestamp, cursor.aiConversationId),
+          ]
+        : []),
+    ]);
+    await sendWhatsAppText(
+      env,
+      e164,
+      "Your deletion request is recorded for identity-checked human review. Records subject to legal retention may be restricted rather than immediately erased.",
+    );
+    return;
+  }
   if (message.type && message.type !== "text" && !message.interactive) {
     await sendWhatsAppText(
       env,
@@ -951,10 +1321,45 @@ async function applyInboundWhatsApp(
       .bind(query.replaceAll(" ", "-"), query, `%${query}%`, query)
       .first<{ code: string; name: string }>();
     if (!area) {
+      const conversationId = cursor.aiConversationId ?? crypto.randomUUID();
+      const clientTurnId = crypto.randomUUID();
+      if (!cursor.aiConversationId) {
+        cursor.aiConversationId = conversationId;
+        await env.DB.prepare(
+          `INSERT INTO channel_conversations
+           (id,user_id,channel,language,state,ai_disclosure_version,ai_enabled,version,created_at,updated_at)
+           VALUES (?,?,'whatsapp',?,'active','ai-routing-disclosure-whatsapp-v1-staging-draft',1,1,?,?)`,
+        )
+          .bind(conversationId, user.id, session.locale, timestamp, timestamp)
+          .run();
+      }
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT OR IGNORE INTO conversation_turns
+           (id,conversation_id,actor,body,provider_message_id,client_message_id,status,created_at)
+           VALUES (?,?,'client',?,?,?,'recorded',?)`,
+        ).bind(
+          clientTurnId,
+          conversationId,
+          incomingText,
+          message.id ?? null,
+          message.id ?? `whatsapp-${clientTurnId}`,
+          timestamp,
+        ),
+        env.DB.prepare(
+          "UPDATE whatsapp_intake_sessions SET cursor_json=?,last_provider_message_id=?,version=version+1,updated_at=? WHERE id=?",
+        ).bind(
+          JSON.stringify(cursor),
+          message.id ?? null,
+          timestamp,
+          session.id,
+        ),
+      ]);
+      await queueGuidedIntake(env, conversationId, clientTurnId);
       await sendWhatsAppText(
         env,
         e164,
-        "I could not match that category. Try a shorter description, or reply Not sure.",
+        "Lex AI is organizing your description and will suggest a category for you to confirm. It is not legal advice. You can reply HUMAN for operations review, PAUSE, RESUME, DELETE, or STOP.",
       );
       return;
     }

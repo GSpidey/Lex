@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lex",
     "slug": "lex-nigeria",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "scheme": "lex",
     "userInterfaceStyle": "light",
@@ -10,13 +10,17 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.lexnigeria.test",
+      "buildNumber": "3",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Lex records voice notes that you choose to add to your private legal intake.",
-        "NSCameraUsageDescription": "Lex uses the camera only when you choose to photograph supporting evidence."
+        "NSCameraUsageDescription": "Lex uses the camera only when you choose to photograph supporting evidence.",
+        "NSPhotoLibraryUsageDescription": "Lex accesses only the evidence you choose from your photo library.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.lexnigeria.test",
+      "versionCode": 3,
       "permissions": ["RECORD_AUDIO", "CAMERA"],
       "adaptiveIcon": { "backgroundColor": "#123c2d" }
     },

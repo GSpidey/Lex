@@ -14,7 +14,12 @@ export const REALTIME_URL = configuredRealtimeUrl ?? "http://10.0.2.2:8790/v1";
 export interface Session {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; role: string };
+  user: {
+    id: string;
+    role: "client" | "lawyer" | "operations" | "owner";
+    activeRole?: "client" | "lawyer" | "operations" | "owner";
+    roles?: Array<"client" | "lawyer" | "operations" | "owner">;
+  };
 }
 const KEY = "lex.session.v1";
 export async function loadSession() {

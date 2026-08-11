@@ -159,6 +159,29 @@ type CountryCode = {
   iso: string;
   dialCode: string;
 };
+type AiConversation = {
+  id: string;
+  state: string;
+  provider?: string;
+  classification_json?: string | null;
+  turns?: Array<{
+    id: string;
+    actor: "client" | "assistant" | "operations";
+    body: string;
+    status: string;
+    created_at: string;
+  }>;
+};
+type LegalDocument = {
+  id: string;
+  code: string;
+  title: string;
+  version_id: string;
+  version: number;
+  status: string;
+  content_markdown: string;
+  company_placeholder_present: number;
+};
 
 const COUNTRY_CODES: CountryCode[] = [
   { country: "Nigeria", iso: "NG", dialCode: "+234" },
@@ -245,7 +268,7 @@ const title = (value: string) =>
 export default function LexApp() {
   const [session, setSession] = useState<Session | null | undefined>();
   const [screen, setScreen] = useState<
-    "home" | "intake" | "matter" | "settings" | "privacy"
+    "home" | "intake" | "matter" | "settings" | "privacy" | "ask" | "legal"
   >("home");
   const [language, setLanguage] = useState<Language>("en");
   const [role, setRole] = useState<Role>("tenant");
@@ -295,6 +318,11 @@ export default function LexApp() {
     | "automated_routing_challenge"
   >("export");
   const [privacyDetails, setPrivacyDetails] = useState("");
+  const [aiConversation, setAiConversation] = useState<AiConversation | null>(
+    null,
+  );
+  const [aiMessage, setAiMessage] = useState("");
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocument[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -972,6 +1000,127 @@ export default function LexApp() {
     });
   }
 
+  async function openAskLex() {
+    if (!session) return;
+    await run(async () => {
+      const created = await api<AiConversation>(
+        "/ai/intake-sessions",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            channel: "mobile",
+            language,
+            aiDisclosureAccepted: true,
+            aiDisclosureVersion: "ai-routing-disclosure-en-v1-staging-draft",
+          }),
+        },
+        session.accessToken,
+      );
+      setAiConversation({ ...created, turns: [] });
+      setScreen("ask");
+    });
+  }
+
+  async function refreshAiConversation(id = aiConversation?.id) {
+    if (!session || !id) return;
+    const refreshed = await api<AiConversation>(
+      `/ai/intake-sessions/${id}`,
+      {},
+      session.accessToken,
+    );
+    setAiConversation(refreshed);
+  }
+
+  async function sendAiMessage() {
+    if (!session || !aiConversation || !aiMessage.trim()) return;
+    const body = aiMessage.trim();
+    setAiMessage("");
+    await run(async () => {
+      await api(
+        `/ai/intake-sessions/${aiConversation.id}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body,
+            clientMessageId: `${Date.now()}-${await Crypto.randomUUID()}`,
+          }),
+        },
+        session.accessToken,
+      );
+      setAiConversation((current) => ({
+        ...(current ?? aiConversation),
+        state: "processing",
+        turns: [
+          ...(current?.turns ?? []),
+          {
+            id: `local-${Date.now()}`,
+            actor: "client",
+            body,
+            status: "recorded",
+            created_at: new Date().toISOString(),
+          },
+        ],
+      }));
+      setTimeout(() => void refreshAiConversation(aiConversation.id), 1_500);
+    });
+  }
+
+  async function requestAiHumanReview(kind: "challenge" | "human-review") {
+    if (!session || !aiConversation) return;
+    await run(async () => {
+      await api(
+        `/ai/intake-sessions/${aiConversation.id}/${kind}`,
+        { method: "POST" },
+        session.accessToken,
+      );
+      await refreshAiConversation(aiConversation.id);
+    });
+  }
+
+  async function confirmAiClassification() {
+    if (!session || !aiConversation) return;
+    let suggested = practiceAreaCode;
+    try {
+      const parsed = JSON.parse(aiConversation.classification_json ?? "{}") as {
+        suggestedPracticeAreaCodes?: string[];
+      };
+      suggested = parsed.suggestedPracticeAreaCodes?.[0] ?? practiceAreaCode;
+    } catch {
+      // The client can still use the catalogue selection if a stale payload is malformed.
+    }
+    await run(async () => {
+      await api(
+        `/ai/intake-sessions/${aiConversation.id}/confirm`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            practiceAreaCode: suggested,
+            confirmed: true,
+          }),
+        },
+        session.accessToken,
+      );
+      setPracticeAreaCode(suggested);
+      setNotice(
+        "AI-organized information confirmed. Continue through the guided intake to share it with a lawyer.",
+      );
+      setScreen("home");
+    });
+  }
+
+  async function openLegalCentre() {
+    if (!session) return;
+    await run(async () => {
+      const result = await api<{ items: LegalDocument[] }>(
+        `/legal/documents?language=${language}`,
+        {},
+        session.accessToken,
+      );
+      setLegalDocuments(result.items);
+      setScreen("legal");
+    });
+  }
+
   if (session === undefined)
     return (
       <View style={styles.loading}>
@@ -1080,6 +1229,26 @@ export default function LexApp() {
         submit={createPrivacyRequest}
       />
     );
+  if (screen === "ask" && aiConversation)
+    return (
+      <AskLex
+        conversation={aiConversation}
+        message={aiMessage}
+        setMessage={setAiMessage}
+        busy={busy}
+        notice={notice}
+        back={() => setScreen("home")}
+        send={sendAiMessage}
+        refresh={() => refreshAiConversation()}
+        confirm={confirmAiClassification}
+        challenge={() => requestAiHumanReview("challenge")}
+        humanReview={() => requestAiHumanReview("human-review")}
+      />
+    );
+  if (screen === "legal")
+    return (
+      <LegalCentre documents={legalDocuments} back={() => setScreen("home")} />
+    );
   return (
     <Home
       language={language}
@@ -1106,6 +1275,8 @@ export default function LexApp() {
       notice={notice}
       busy={busy}
       startIntake={startIntake}
+      openAskLex={openAskLex}
+      openLegalCentre={openLegalCentre}
       openMatter={openMatter}
       openSettings={loadSettings}
       signOut={async () => {
@@ -1310,12 +1481,17 @@ function Home(props: {
   notice: string;
   busy: boolean;
   startIntake: () => void;
+  openAskLex: () => void;
+  openLegalCentre: () => void;
   openMatter: (matter: Matter) => void;
   openSettings: () => void;
   signOut: () => void;
 }) {
   const words = copy[props.language];
   const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [openCatalogGroup, setOpenCatalogGroup] = useState<string>();
+  const [openSection, setOpenSection] = useState("language");
   const visiblePracticeAreas = PRACTICE_AREAS.filter((item) => {
     const query = catalogQuery.trim().toLowerCase();
     return (
@@ -1325,6 +1501,17 @@ function Home(props: {
       )
     );
   });
+  const selectedPracticeArea = PRACTICE_AREAS.find(
+    (item) => item.code === props.practiceAreaCode,
+  );
+  const catalogueGroups = Array.from(
+    PRACTICE_AREAS.reduce((groups, item) => {
+      const entries = groups.get(item.group) ?? [];
+      entries.push(item);
+      groups.set(item.group, entries);
+      return groups;
+    }, new Map<string, Array<(typeof PRACTICE_AREAS)[number]>>()),
+  );
   return (
     <Shell>
       <View style={styles.between}>
@@ -1332,7 +1519,10 @@ function Home(props: {
           <Text style={styles.kicker}>LEX NATIONWIDE TEST RELEASE</Text>
           <Text style={styles.heading}>Good day.</Text>
         </View>
-        <Button small label="Settings" onPress={props.openSettings} />
+        <View style={styles.row}>
+          <Button small label="Legal centre" onPress={props.openLegalCentre} />
+          <Button small label="Settings" onPress={props.openSettings} />
+        </View>
       </View>
       <Card dark>
         <Text style={styles.kickerLight}>MANAGED LEGAL ACCESS</Text>
@@ -1343,42 +1533,80 @@ function Home(props: {
           onPress={props.startIntake}
           busy={props.busy}
         />
+        <Button
+          outlineLight
+          label="Ask Lex AI-assisted intake"
+          onPress={props.openAskLex}
+          busy={props.busy}
+        />
       </Card>
-      <Section label="Language">
+      <AccordionSection
+        label="Language"
+        summary={title(props.language === "pcm" ? "Pidgin" : props.language)}
+        open={openSection === "language"}
+        onToggle={() =>
+          setOpenSection(openSection === "language" ? "" : "language")
+        }
+      >
         <View style={styles.row}>
           <Chip
             label="English"
             active={props.language === "en"}
-            onPress={() => props.setLanguage("en")}
+            onPress={() => {
+              props.setLanguage("en");
+              setOpenSection("client");
+            }}
           />
           <Chip
             label="Pidgin"
             active={props.language === "pcm"}
-            onPress={() => props.setLanguage("pcm")}
+            onPress={() => {
+              props.setLanguage("pcm");
+              setOpenSection("client");
+            }}
           />
           <Chip
             label="Hausa"
             active={props.language === "ha"}
-            onPress={() => props.setLanguage("ha")}
+            onPress={() => {
+              props.setLanguage("ha");
+              setOpenSection("client");
+            }}
           />
           <Chip
             label="Yoruba"
             active={props.language === "yo"}
-            onPress={() => props.setLanguage("yo")}
+            onPress={() => {
+              props.setLanguage("yo");
+              setOpenSection("client");
+            }}
           />
           <Chip
             label="Igbo"
             active={props.language === "ig"}
-            onPress={() => props.setLanguage("ig")}
+            onPress={() => {
+              props.setLanguage("ig");
+              setOpenSection("client");
+            }}
           />
         </View>
-      </Section>
-      <Section label="Who needs help?">
+      </AccordionSection>
+      <AccordionSection
+        label="Who needs help?"
+        summary={title(props.clientType)}
+        open={openSection === "client"}
+        onToggle={() =>
+          setOpenSection(openSection === "client" ? "" : "client")
+        }
+      >
         <View style={styles.wrap}>
           <Chip
             label="Adult individual"
             active={props.clientType === "adult_individual"}
-            onPress={() => props.setClientType("adult_individual")}
+            onPress={() => {
+              props.setClientType("adult_individual");
+              setOpenSection("location");
+            }}
           />
           <Chip
             label="Person under 18"
@@ -1428,58 +1656,185 @@ function Home(props: {
             />
           </>
         ) : null}
-      </Section>
-      <Section label="What legal issue do you need help with?">
-        <TextInput
-          accessibilityLabel="Search legal issue catalogue"
-          style={styles.input}
-          value={catalogQuery}
-          onChangeText={setCatalogQuery}
-          placeholder="Search e.g. police, divorce, debt, business"
-        />
-        <View style={styles.catalog}>
-          {visiblePracticeAreas.map((item) => (
-            <Chip
-              key={item.code}
-              label={item.name}
-              active={props.practiceAreaCode === item.code}
-              onPress={() => props.setPracticeAreaCode(item.code)}
-            />
-          ))}
-        </View>
-        {visiblePracticeAreas.length === 0 ? (
-          <Notice text="No matching category. Choose Other or Not sure so Lex operations can help classify it." />
-        ) : null}
-      </Section>
-      {props.practiceAreaCode === "tenancy" ? (
-        <Section label="I am the">
-          <View style={styles.row}>
-            <Chip
-              label={words.tenant}
-              active={props.role === "tenant"}
-              onPress={() => props.setRole("tenant")}
-            />
-            <Chip
-              label={words.landlord}
-              active={props.role === "landlord"}
-              onPress={() => props.setRole("landlord")}
-            />
-          </View>
-        </Section>
-      ) : null}
-      <Section label="Nigerian state or FCT">
+      </AccordionSection>
+      <AccordionSection
+        label="Location"
+        summary={
+          stateChoices.find((item) => item.code === props.stateCode)?.name ??
+          props.stateCode
+        }
+        open={openSection === "location"}
+        onToggle={() =>
+          setOpenSection(openSection === "location" ? "" : "location")
+        }
+      >
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {stateChoices.map((item) => (
             <Chip
               key={item.code}
               label={item.name}
               active={props.stateCode === item.code}
-              onPress={() => props.setStateCode(item.code)}
+              onPress={() => {
+                props.setStateCode(item.code);
+                setOpenSection("legal");
+              }}
             />
           ))}
         </ScrollView>
-        <Notice text="All states and the FCT are enabled for synthetic testing. If no verified eligible lawyer is available, Lex operations will assist with matching before conflict review or payment." />
-      </Section>
+        <Notice text="All states and the FCT are enabled for synthetic testing. If no verified eligible lawyer is available, operations assists before conflict review or payment." />
+      </AccordionSection>
+      <AccordionSection
+        label="Legal issue"
+        summary={selectedPracticeArea?.name ?? "Not sure"}
+        open={openSection === "legal"}
+        onToggle={() => setOpenSection(openSection === "legal" ? "" : "legal")}
+      >
+        <View style={styles.searchRow}>
+          <TextInput
+            accessibilityLabel="Search legal issue catalogue"
+            style={[styles.input, styles.searchInput]}
+            value={catalogQuery}
+            onChangeText={setCatalogQuery}
+            placeholder="Search police, divorce, debt…"
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: catalogOpen }}
+            accessibilityLabel="Browse grouped legal issue catalogue"
+            style={styles.catalogTrigger}
+            onPress={() => setCatalogOpen((current) => !current)}
+          >
+            <Text style={styles.catalogTriggerText}>
+              {catalogOpen ? "Close" : "Browse"} ▾
+            </Text>
+          </Pressable>
+        </View>
+        {catalogQuery.trim() ? (
+          <View style={styles.catalog}>
+            {visiblePracticeAreas.map((item) => (
+              <Chip
+                key={item.code}
+                label={item.name}
+                active={props.practiceAreaCode === item.code}
+                onPress={() => {
+                  props.setPracticeAreaCode(item.code);
+                  setCatalogQuery("");
+                  setOpenSection(
+                    item.code === "tenancy" ? "addendum" : "consultation",
+                  );
+                }}
+              />
+            ))}
+          </View>
+        ) : null}
+        {catalogOpen ? (
+          <View style={styles.catalogBranches}>
+            {catalogueGroups.map(([group, items]) => (
+              <View key={group}>
+                <Pressable
+                  style={styles.branchHeader}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: openCatalogGroup === group }}
+                  onPress={() =>
+                    setOpenCatalogGroup(
+                      openCatalogGroup === group ? undefined : group,
+                    )
+                  }
+                >
+                  <Text style={styles.strong}>{group}</Text>
+                  <Text style={styles.arrow}>
+                    {openCatalogGroup === group ? "−" : "+"}
+                  </Text>
+                </Pressable>
+                {openCatalogGroup === group ? (
+                  <View style={styles.catalog}>
+                    {items.map((item) => (
+                      <Chip
+                        key={item.code}
+                        label={item.name}
+                        active={props.practiceAreaCode === item.code}
+                        onPress={() => {
+                          props.setPracticeAreaCode(item.code);
+                          setCatalogOpen(false);
+                          setOpenSection(
+                            item.code === "tenancy"
+                              ? "addendum"
+                              : "consultation",
+                          );
+                        }}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {selectedPracticeArea ? (
+          <Notice text={selectedPracticeArea.description} />
+        ) : null}
+        {visiblePracticeAreas.length === 0 ? (
+          <Notice text="No matching category. Choose Other or Not sure so Lex operations can help classify it." />
+        ) : null}
+      </AccordionSection>
+      {props.practiceAreaCode === "tenancy" ? (
+        <AccordionSection
+          label="Issue-specific questions"
+          summary={title(props.role)}
+          open={openSection === "addendum"}
+          onToggle={() =>
+            setOpenSection(openSection === "addendum" ? "" : "addendum")
+          }
+        >
+          <View style={styles.row}>
+            <Chip
+              label={words.tenant}
+              active={props.role === "tenant"}
+              onPress={() => {
+                props.setRole("tenant");
+                setOpenSection("consultation");
+              }}
+            />
+            <Chip
+              label={words.landlord}
+              active={props.role === "landlord"}
+              onPress={() => {
+                props.setRole("landlord");
+                setOpenSection("consultation");
+              }}
+            />
+          </View>
+        </AccordionSection>
+      ) : null}
+      <AccordionSection
+        label="Consultation preferences"
+        summary="Live text, voice notes and secure messages"
+        open={openSection === "consultation"}
+        onToggle={() =>
+          setOpenSection(openSection === "consultation" ? "" : "consultation")
+        }
+      >
+        <Notice text="The test release supports scheduled live text, asynchronous voice notes, documents and secure messages. Native audio and video calls are not included." />
+        <Button
+          label="Review and continue"
+          onPress={() => setOpenSection("review")}
+        />
+      </AccordionSection>
+      <AccordionSection
+        label="Review and continue"
+        summary={`${selectedPracticeArea?.name ?? "Not sure"} · ${stateChoices.find((item) => item.code === props.stateCode)?.name ?? props.stateCode}`}
+        open={openSection === "review"}
+        onToggle={() =>
+          setOpenSection(openSection === "review" ? "" : "review")
+        }
+      >
+        <Notice text="Lex will collect category-specific facts next. AI-organized information must be reviewed and confirmed before it can be shared with a lawyer." />
+        <Button
+          label={words.start}
+          onPress={props.startIntake}
+          busy={props.busy}
+        />
+      </AccordionSection>
       <Section label="Your matters">
         {props.matters.length === 0 ? (
           <Card>
@@ -1507,6 +1862,142 @@ function Home(props: {
       <Pressable onPress={props.signOut}>
         <Text style={styles.danger}>Sign out</Text>
       </Pressable>
+    </Shell>
+  );
+}
+
+function AskLex(props: {
+  conversation: AiConversation;
+  message: string;
+  setMessage: (value: string) => void;
+  busy: boolean;
+  notice: string;
+  back: () => void;
+  send: () => void;
+  refresh: () => void;
+  confirm: () => void;
+  challenge: () => void;
+  humanReview: () => void;
+}) {
+  return (
+    <Shell back={props.back} title="Ask Lex">
+      <Card dark>
+        <Text style={styles.kickerLight}>LEX AI-ASSISTED INTAKE</Text>
+        <Text style={styles.heroLight}>
+          Explain the issue in your own words.
+        </Text>
+        <Text style={styles.bodyLight}>
+          Powered by OpenAI in this test release. Lex organizes facts and
+          suggests a category; it does not give legal advice. You must confirm
+          any AI-organized information before lawyer sharing.
+        </Text>
+      </Card>
+      <View style={styles.statusRow}>
+        <Text style={styles.statusPill}>{title(props.conversation.state)}</Text>
+        <Text style={styles.meta}>
+          {props.conversation.provider === "openai"
+            ? "OpenAI configured"
+            : "Safe fallback available"}
+        </Text>
+      </View>
+      <Section label="Conversation">
+        {(props.conversation.turns ?? []).length === 0 ? (
+          <Notice text="Start by describing what happened, where it happened, and whether anyone is in immediate danger or detention." />
+        ) : (
+          props.conversation.turns?.map((turn) => (
+            <View
+              key={turn.id}
+              style={[
+                styles.chatBubble,
+                turn.actor === "client"
+                  ? styles.chatBubbleClient
+                  : styles.chatBubbleLex,
+              ]}
+            >
+              <Text style={styles.chatActor}>
+                {turn.actor === "client" ? "You" : "Lex AI"}
+              </Text>
+              <Text style={styles.body}>{turn.body}</Text>
+            </View>
+          ))
+        )}
+        <TextInput
+          style={[styles.input, styles.longInput]}
+          multiline
+          value={props.message}
+          onChangeText={props.setMessage}
+          placeholder="Describe the legal issue or answer Lex's question"
+        />
+        <Button
+          label="Send securely"
+          onPress={props.send}
+          busy={props.busy}
+          disabled={!props.message.trim()}
+        />
+        <Button secondary label="Refresh response" onPress={props.refresh} />
+      </Section>
+      {props.conversation.state === "awaiting_confirmation" ? (
+        <Card>
+          <Text style={styles.heading}>Needs your confirmation</Text>
+          <Text style={styles.body}>
+            Inspect the suggested category and organized facts. Confirm only if
+            they reflect what you said; otherwise continue the conversation or
+            challenge the routing.
+          </Text>
+          <Button label="Confirm suggested category" onPress={props.confirm} />
+          <Button
+            secondary
+            label="Challenge this routing"
+            onPress={props.challenge}
+          />
+        </Card>
+      ) : null}
+      {props.conversation.state === "human_review" ? (
+        <Notice text="This enquiry has been routed to restricted human review because you requested it or the issue may be urgent, sensitive or uncertain." />
+      ) : null}
+      <Button
+        secondary
+        label="Request human review"
+        onPress={props.humanReview}
+      />
+      {props.notice ? <Notice text={props.notice} /> : null}
+    </Shell>
+  );
+}
+
+function LegalCentre(props: { documents: LegalDocument[]; back: () => void }) {
+  const [openDocument, setOpenDocument] = useState<string>();
+  return (
+    <Shell back={props.back} title="Legal centre">
+      <Card dark>
+        <Text style={styles.kickerLight}>CONTROLLED STAGING DRAFTS</Text>
+        <Text style={styles.heroLight}>Legal documents and disclosures</Text>
+        <Text style={styles.bodyLight}>
+          These documents are versioned staging drafts. Public use remains
+          blocked until the parent company details and lawyer-co-founder
+          approvals are recorded.
+        </Text>
+      </Card>
+      {props.documents.map((document) => (
+        <AccordionSection
+          key={document.version_id}
+          label={document.title}
+          summary={`Version ${document.version} · ${title(document.status)}`}
+          open={openDocument === document.version_id}
+          onToggle={() =>
+            setOpenDocument(
+              openDocument === document.version_id
+                ? undefined
+                : document.version_id,
+            )
+          }
+        >
+          {document.company_placeholder_present ? (
+            <Notice text="Parent-company details and legal approval are still required before production publication." />
+          ) : null}
+          <Text style={styles.legalText}>{document.content_markdown}</Text>
+        </AccordionSection>
+      ))}
     </Shell>
   );
 }
@@ -2095,6 +2586,42 @@ function Section({
     </View>
   );
 }
+function AccordionSection({
+  label,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.accordion}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityHint={
+          open ? "Collapses this section" : "Expands this section"
+        }
+        onPress={onToggle}
+        style={styles.accordionHeader}
+      >
+        <View style={styles.grow}>
+          <Text style={styles.kicker}>{label.toUpperCase()}</Text>
+          <Text style={styles.accordionSummary} numberOfLines={2}>
+            {summary}
+          </Text>
+        </View>
+        <Text style={styles.accordionChevron}>{open ? "⌃" : "⌄"}</Text>
+      </Pressable>
+      {open ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
 function Card({
   children,
   dark,
@@ -2138,6 +2665,7 @@ function Button({
   secondary,
   danger,
   light,
+  outlineLight,
   small,
 }: {
   label: string;
@@ -2147,6 +2675,7 @@ function Button({
   secondary?: boolean;
   danger?: boolean;
   light?: boolean;
+  outlineLight?: boolean;
   small?: boolean;
 }) {
   return (
@@ -2158,6 +2687,7 @@ function Button({
         secondary && styles.buttonSecondary,
         danger && styles.buttonDanger,
         light && styles.buttonLight,
+        outlineLight && styles.buttonOutlineLight,
         small && styles.buttonSmall,
         (busy || disabled) && styles.disabled,
       ]}
@@ -2340,6 +2870,29 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" },
   wrap: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
   catalog: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
+  searchRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  searchInput: { flex: 1, minWidth: 0 },
+  catalogTrigger: {
+    minHeight: 48,
+    paddingHorizontal: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#1e6248",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f3f8f4",
+  },
+  catalogTriggerText: { color: "#123c2d", fontSize: 12, fontWeight: "800" },
+  catalogBranches: { gap: 7 },
+  branchHeader: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#eef1ec",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   between: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2347,6 +2900,24 @@ const styles = StyleSheet.create({
   },
   grow: { flex: 1 },
   section: { gap: 10, marginTop: 14 },
+  accordion: {
+    borderWidth: 1,
+    borderColor: "#d8dbd5",
+    borderRadius: 16,
+    backgroundColor: "#fffefa",
+    overflow: "hidden",
+  },
+  accordionHeader: {
+    minHeight: 68,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  accordionSummary: { color: "#17241d", fontSize: 14, fontWeight: "700" },
+  accordionChevron: { color: "#1e6248", fontSize: 24, fontWeight: "700" },
+  accordionBody: { padding: 16, paddingTop: 4, gap: 10 },
   question: { gap: 8, marginBottom: 10 },
   chip: {
     paddingVertical: 9,
@@ -2376,6 +2947,11 @@ const styles = StyleSheet.create({
   },
   buttonDanger: { backgroundColor: "#8a4b40" },
   buttonLight: { backgroundColor: "#e5f0e8" },
+  buttonOutlineLight: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#e5f0e8",
+  },
   buttonSmall: {
     minHeight: 38,
     paddingHorizontal: 12,
@@ -2395,6 +2971,27 @@ const styles = StyleSheet.create({
   },
   strong: { color: "#17241d", fontWeight: "800", fontSize: 13, lineHeight: 19 },
   meta: { color: "#77827b", fontSize: 11, lineHeight: 17 },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  statusPill: {
+    color: "#123c2d",
+    backgroundColor: "#e5f0e8",
+    borderRadius: 99,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  chatBubble: { borderRadius: 14, padding: 13, gap: 5, maxWidth: "92%" },
+  chatBubbleClient: { backgroundColor: "#e5f0e8", alignSelf: "flex-end" },
+  chatBubbleLex: { backgroundColor: "#fff5dc", alignSelf: "flex-start" },
+  chatActor: { color: "#a66a25", fontSize: 10, fontWeight: "800" },
+  longInput: { minHeight: 100, textAlignVertical: "top" },
+  legalText: { color: "#34453c", fontSize: 13, lineHeight: 21 },
   arrow: { color: "#89938c", fontSize: 28 },
   danger: {
     color: "#8a4b40",

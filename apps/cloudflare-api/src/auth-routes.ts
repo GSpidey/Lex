@@ -5,6 +5,7 @@ import {
   refreshSessionSchema,
   requestOtpSchema,
   verifyOtpSchema,
+  activeRoleSchema,
 } from "@lex/contracts";
 import {
   base32Secret,
@@ -25,6 +26,7 @@ import {
   recordJobBeforePublish,
 } from "./repository.js";
 import { requireAuth, type AppContext } from "./middleware.js";
+import { canonicalRole } from "./repository.js";
 import type { Env, Variables } from "./types.js";
 
 const auth = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -302,7 +304,7 @@ auth.post(
           "UPDATE auth_challenges SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL AND superseded_at IS NULL",
         ).bind(timestamp, challenge.id),
         context.env.DB.prepare(
-          "INSERT INTO sessions (id,challenge_id,user_id,access_token_hash,refresh_token_hash,device_name,device_hash,expires_at,refresh_expires_at,last_seen_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO sessions (id,challenge_id,user_id,access_token_hash,refresh_token_hash,device_name,device_hash,expires_at,refresh_expires_at,last_seen_at,created_at,active_role) VALUES (?,?,?,?,?,?,?,?,?,?,?,'client')",
         ).bind(
           sessionId,
           challenge.id,
@@ -316,6 +318,9 @@ auth.post(
           timestamp,
           timestamp,
         ),
+        context.env.DB.prepare(
+          "INSERT OR IGNORE INTO user_role_assignments (id,user_id,role,status,assignment_source,assigned_at) VALUES (?,?,'client','active','public_registration',?)",
+        ).bind(crypto.randomUUID(), userId, timestamp),
         context.env.DB.prepare(
           "INSERT OR IGNORE INTO notification_preferences (user_id,whatsapp,push,email,updated_at) VALUES (?,1,0,0,?)",
         ).bind(userId, timestamp),
@@ -343,7 +348,12 @@ auth.post(
       accessToken,
       refreshToken,
       accessTokenExpiresAt: future(15 * 60_000),
-      user: { id: userId, role: "client" },
+      user: {
+        id: userId,
+        role: "client",
+        activeRole: "client",
+        roles: ["client"],
+      },
     });
   },
 );
@@ -354,13 +364,14 @@ auth.post(
   async (context) => {
     const input = context.req.valid("json");
     const session = await context.env.DB.prepare(
-      "SELECT s.id,s.user_id,u.role,s.refresh_expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.refresh_token_hash=? AND s.revoked_at IS NULL",
+      "SELECT s.id,s.user_id,u.role,s.active_role,s.refresh_expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.refresh_token_hash=? AND s.revoked_at IS NULL",
     )
       .bind(await sha256(input.refreshToken))
       .first<{
         id: string;
         user_id: string;
         role: string;
+        active_role: string | null;
         refresh_expires_at: string;
       }>();
     if (!session || Date.parse(session.refresh_expires_at) <= Date.now())
@@ -368,6 +379,17 @@ auth.post(
         { message: "Refresh session is invalid or expired" },
         401,
       );
+    const roles = await rolesForUser(
+      context.env,
+      session.user_id,
+      session.role,
+    );
+    const requestedActiveRole = canonicalRole(
+      session.active_role ?? session.role,
+    );
+    const activeRole = roles.includes(requestedActiveRole)
+      ? requestedActiveRole
+      : (roles[0] ?? canonicalRole(session.role));
     const accessToken = randomToken();
     const refreshToken = randomToken(48);
     const timestamp = now();
@@ -387,7 +409,7 @@ auth.post(
       accessToken,
       refreshToken,
       accessTokenExpiresAt: future(15 * 60_000),
-      user: { id: session.user_id, role: session.role },
+      user: { id: session.user_id, role: activeRole, activeRole, roles },
     });
   },
 );
@@ -432,10 +454,15 @@ auth.post(
         401,
       );
     const account = await context.env.DB.prepare(
-      "SELECT role,mfa_secret_encrypted FROM users WHERE id=? AND status='active'",
+      "SELECT role,default_mobile_role,default_web_role,mfa_secret_encrypted FROM users WHERE id=? AND status='active'",
     )
       .bind(preauth.userId)
-      .first<{ role: string; mfa_secret_encrypted: string | null }>();
+      .first<{
+        role: string;
+        default_mobile_role: string | null;
+        default_web_role: string | null;
+        mfa_secret_encrypted: string | null;
+      }>();
     if (!account?.mfa_secret_encrypted)
       return context.json({ message: "MFA has not been set up" }, 409);
     const input = context.req.valid("json");
@@ -449,6 +476,11 @@ auth.post(
     const accessToken = randomToken();
     const refreshToken = randomToken(48);
     const timestamp = now();
+    const defaultRole = canonicalRole(
+      input.deviceName?.toLowerCase().includes("web")
+        ? (account.default_web_role ?? account.role)
+        : (account.default_mobile_role ?? account.role),
+    );
     try {
       await context.env.DB.batch([
         context.env.DB.prepare(
@@ -461,7 +493,7 @@ auth.post(
           "UPDATE users SET mfa_enabled=1,updated_at=? WHERE id=?",
         ).bind(timestamp, preauth.userId),
         context.env.DB.prepare(
-          "INSERT INTO sessions (id,challenge_id,user_id,access_token_hash,refresh_token_hash,device_name,expires_at,refresh_expires_at,last_seen_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO sessions (id,challenge_id,user_id,access_token_hash,refresh_token_hash,device_name,expires_at,refresh_expires_at,last_seen_at,created_at,active_role,last_step_up_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         ).bind(
           sessionId,
           preauth.challengeId,
@@ -472,6 +504,8 @@ auth.post(
           future(15 * 60_000),
           future(30 * 24 * 60 * 60_000),
           timestamp,
+          timestamp,
+          defaultRole,
           timestamp,
         ),
         context.env.DB.prepare(
@@ -497,12 +531,148 @@ auth.post(
       accessToken,
       refreshToken,
       accessTokenExpiresAt: future(15 * 60_000),
-      user: { id: preauth.userId, role: account.role },
+      user: {
+        id: preauth.userId,
+        role: defaultRole,
+        activeRole: defaultRole,
+        roles: await rolesForUser(context.env, preauth.userId, account.role),
+      },
     });
   },
 );
 
 auth.use("/*", requireAuth);
+auth.get("/me", async (context) => {
+  const user = context.get("user");
+  const profile = await context.env.DB.prepare(
+    "SELECT display_name,phone_verified_at,email_verified_at,mfa_enabled FROM users WHERE id=?",
+  )
+    .bind(user.id)
+    .first<{
+      display_name: string | null;
+      phone_verified_at: string | null;
+      email_verified_at: string | null;
+      mfa_enabled: number;
+    }>();
+  return context.json({
+    id: user.id,
+    activeRole: user.role,
+    roles: user.roles,
+    displayName: profile?.display_name,
+    verification: {
+      phone: Boolean(profile?.phone_verified_at),
+      email: Boolean(profile?.email_verified_at),
+      mfa: profile?.mfa_enabled === 1,
+    },
+  });
+});
+
+auth.get("/roles", (context) => {
+  const user = context.get("user");
+  return context.json({ activeRole: user.role, roles: user.roles });
+});
+
+auth.post(
+  "/active-role",
+  zValidator("json", activeRoleSchema),
+  async (context) => {
+    const user = context.get("user");
+    const { role } = context.req.valid("json");
+    if (!user.roles.includes(role))
+      return context.json(
+        { message: "That role is not assigned to this account" },
+        403,
+      );
+    if (role !== "client") {
+      const privileged = await context.env.DB.prepare(
+        "SELECT mfa_enabled FROM users WHERE id=?",
+      )
+        .bind(user.id)
+        .first<{ mfa_enabled: number }>();
+      if (privileged?.mfa_enabled !== 1)
+        return context.json(
+          { message: "MFA is required for this workspace" },
+          403,
+        );
+    }
+    const accessToken = randomToken();
+    const refreshToken = randomToken(48);
+    const timestamp = now();
+    await context.env.DB.batch([
+      context.env.DB.prepare(
+        "UPDATE sessions SET active_role=?,access_token_hash=?,refresh_token_hash=?,expires_at=?,refresh_expires_at=?,last_seen_at=? WHERE id=? AND user_id=?",
+      ).bind(
+        role,
+        await sha256(accessToken),
+        await sha256(refreshToken),
+        future(15 * 60_000),
+        future(30 * 24 * 60 * 60_000),
+        timestamp,
+        user.sessionId,
+        user.id,
+      ),
+      context.env.DB.prepare(
+        "INSERT INTO audit_events (id,actor_user_id,action,entity_type,entity_id,metadata_json,request_id,occurred_at) VALUES (?,?,?,?,?,?,?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        user.id,
+        "auth.active_role_changed",
+        "Session",
+        user.sessionId,
+        JSON.stringify({ from: user.role, to: role }),
+        context.get("requestId"),
+        timestamp,
+      ),
+    ]);
+    return context.json({
+      accessToken,
+      refreshToken,
+      accessTokenExpiresAt: future(15 * 60_000),
+      user: { id: user.id, role, activeRole: role, roles: user.roles },
+    });
+  },
+);
+
+auth.post(
+  "/step-up",
+  zValidator("json", z.object({ code: z.string().regex(/^\d{6}$/u) })),
+  async (context) => {
+    const user = context.get("user");
+    if (user.role === "client")
+      return context.json(
+        { message: "Step-up is for privileged workspaces" },
+        400,
+      );
+    const account = await context.env.DB.prepare(
+      "SELECT mfa_secret_encrypted FROM users WHERE id=? AND mfa_enabled=1",
+    )
+      .bind(user.id)
+      .first<{ mfa_secret_encrypted: string | null }>();
+    if (!account?.mfa_secret_encrypted)
+      return context.json({ message: "MFA has not been configured" }, 409);
+    const { code } = context.req.valid("json");
+    const secret = await decrypt(
+      account.mfa_secret_encrypted,
+      context.env.FIELD_ENCRYPTION_KEY,
+    );
+    if (!(await verifyTotp(secret, code)))
+      return context.json({ message: "Authenticator code is incorrect" }, 401);
+    const timestamp = now();
+    await context.env.DB.prepare(
+      "UPDATE sessions SET last_step_up_at=? WHERE id=?",
+    )
+      .bind(timestamp, user.sessionId)
+      .run();
+    await audit(context.env, {
+      actorUserId: user.id,
+      action: "auth.step_up_verified",
+      entityType: "Session",
+      entityId: user.sessionId,
+      requestId: context.get("requestId"),
+    });
+    return context.json({ verifiedAt: timestamp, validForSeconds: 600 });
+  },
+);
 auth.get("/sessions", async (context) => {
   const user = context.get("user");
   const result = await context.env.DB.prepare(
@@ -578,4 +748,15 @@ async function readPreAuth(
     challengeId: row.challenge_id,
     purpose: row.purpose,
   };
+}
+
+async function rolesForUser(env: Env, userId: string, legacyRole: string) {
+  const result = await env.DB.prepare(
+    "SELECT role FROM user_role_assignments WHERE user_id=? AND status='active' ORDER BY role",
+  )
+    .bind(userId)
+    .all<{ role: "client" | "lawyer" | "operations" | "owner" }>();
+  return result.results.length > 0
+    ? result.results.map((item) => item.role)
+    : [canonicalRole(legacyRole)];
 }

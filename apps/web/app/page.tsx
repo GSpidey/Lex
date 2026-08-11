@@ -98,6 +98,42 @@ type GuardianReview = {
   status: string;
   version: number;
 };
+type ProviderCapability = {
+  implemented: boolean;
+  configured: boolean;
+  status: string;
+};
+type ProfessionalApplication = {
+  id: string;
+  user_id: string;
+  legal_name: string;
+  public_name: string;
+  supreme_court_number: string;
+  year_of_call: number;
+  state: string;
+  submitted_at?: string;
+  updated_at: string;
+};
+type LegalDocument = {
+  code: string;
+  title: string;
+  version_id: string;
+  version: number;
+  status: string;
+  content_markdown: string;
+  company_placeholder_present: number;
+};
+type AiRun = {
+  id: string;
+  purpose: string;
+  model: string;
+  prompt_version: string;
+  schema_version: string;
+  confidence_millis?: number;
+  requires_human_review: number;
+  latency_ms?: number;
+  created_at: string;
+};
 
 const label = (value: string) =>
   value
@@ -120,6 +156,10 @@ export default function Workspace() {
     | "jobs"
     | "privacy"
     | "audits"
+    | "applications"
+    | "providers"
+    | "legal"
+    | "ai"
   >("matters");
   const [matters, setMatters] = useState<Matter[]>([]);
   const [lawyers, setLawyers] = useState<Lawyer[]>([]);
@@ -134,15 +174,28 @@ export default function Workspace() {
     [],
   );
   const [guardianReviews, setGuardianReviews] = useState<GuardianReview[]>([]);
+  const [professionalApplications, setProfessionalApplications] = useState<
+    ProfessionalApplication[]
+  >([]);
+  const [providerCapabilities, setProviderCapabilities] = useState<
+    Record<string, ProviderCapability>
+  >({});
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocument[]>([]);
+  const [aiRuns, setAiRuns] = useState<AiRun[]>([]);
   const [catalog, setCatalog] = useState<PracticeArea[]>([]);
   const [application, setApplication] = useState({
+    legalName: "",
     displayName: "",
     email: "",
+    professionalPhone: "",
     supremeCourtNumber: "",
     yearOfCall: String(new Date().getFullYear()),
     firmName: "",
+    officeAddress: "",
+    website: "",
     bio: "",
     practiceAreaCodes: [] as string[],
+    conductDeclaration: false,
   });
   const [selected, setSelected] = useState<MatterDetail | null>(null);
   const [assessment, setAssessment] = useState({
@@ -193,7 +246,7 @@ export default function Workspace() {
         "/catalog/practice-areas",
       );
       setCatalog(catalogue.groups.flatMap((group) => group.items));
-      if (["admin", "super_admin"].includes(active.user.role)) {
+      if (["operations", "owner"].includes(active.user.role)) {
         const [
           lawyerRows,
           jobRows,
@@ -237,6 +290,28 @@ export default function Workspace() {
         setSafeguarding(safeguardingRows);
         setAuthorityReviews(authorityRows);
         setGuardianReviews(guardianRows);
+        const [applicationRows, providers, legal, ai] = await Promise.all([
+          api<ProfessionalApplication[]>(
+            "/owner/professional-applications",
+            {},
+            active.accessToken,
+          ),
+          api<Record<string, ProviderCapability>>(
+            "/owner/providers",
+            {},
+            active.accessToken,
+          ),
+          api<{ items: LegalDocument[] }>(
+            "/legal/documents?language=en",
+            {},
+            active.accessToken,
+          ),
+          api<AiRun[]>("/owner/ai-runs", {}, active.accessToken),
+        ]);
+        setProfessionalApplications(applicationRows);
+        setProviderCapabilities(providers);
+        setLegalDocuments(legal.items);
+        setAiRuns(ai);
       }
     });
   }
@@ -433,17 +508,21 @@ export default function Workspace() {
     if (!session) return;
     await run(async () => {
       await api(
-        "/lawyer/application",
+        "/professional-applications/me",
         {
-          method: "POST",
+          method: "PUT",
           body: JSON.stringify({
-            displayName: application.displayName,
-            email: application.email,
-            phone,
+            legalName: application.legalName,
+            publicName: application.displayName,
+            professionalEmail: application.email,
+            professionalPhone: application.professionalPhone || phone,
             supremeCourtNumber: application.supremeCourtNumber,
             yearOfCall: Number(application.yearOfCall),
+            jurisdictionOfCall: "Nigeria",
             firmName: application.firmName || undefined,
-            bio: application.bio,
+            officeAddress: application.officeAddress || undefined,
+            website: application.website || undefined,
+            biography: application.bio,
             languages: ["en"],
             stateCodes: [
               "AB",
@@ -485,17 +564,71 @@ export default function Workspace() {
               "ZA",
             ],
             practiceAreaCodes: application.practiceAreaCodes,
-            serviceCodes: [],
             consultationModes: ["live_text", "voice_note", "secure_message"],
-            tenancyRoles: ["tenant", "landlord"],
+            weeklyCapacity: 5,
             urgentAvailable: false,
+            conductDeclaration: application.conductDeclaration,
+            termsVersion: "lawyer-participation-en-v1-staging-draft",
           }),
         },
+        session.accessToken,
+      );
+      await api(
+        "/professional-applications/me/submit",
+        { method: "POST" },
         session.accessToken,
       );
       setMessage(
         "Application submitted. Sign out and sign in again to set up mandatory MFA and see verification status.",
       );
+    });
+  }
+
+  async function reviewProfessionalApplication(
+    item: ProfessionalApplication,
+    decision: "information_requested" | "approved" | "declined",
+  ) {
+    if (!session) return;
+    await run(async () => {
+      await api(
+        `/owner/professional-applications/${item.id}/review`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            reason:
+              decision === "approved"
+                ? "Identity, practising list and current digital licence evidence reviewed in controlled staging."
+                : decision === "information_requested"
+                  ? "Additional practising-list, licence, capability or payout evidence is required."
+                  : "Professional verification requirements were not satisfied.",
+            evidenceReference: `restricted-professional-review:${item.id}`,
+            licenceExpiresAt:
+              decision === "approved"
+                ? new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString()
+                : undefined,
+          }),
+        },
+        session.accessToken,
+      );
+      await loadWorkspace();
+    });
+  }
+
+  async function switchRole(
+    role: "client" | "lawyer" | "operations" | "owner",
+  ) {
+    if (!session || role === session.user.role) return;
+    await run(async () => {
+      const next = await api<Session>(
+        "/auth/active-role",
+        { method: "POST", body: JSON.stringify({ role }) },
+        session.accessToken,
+      );
+      saveSession(next);
+      setTab("matters");
+      setSelected(null);
+      setSession(next);
     });
   }
   async function conflict(decision: "accepted" | "declined") {
@@ -775,7 +908,34 @@ export default function Workspace() {
         <section className="login-panel scroll-panel">
           <div className="login-card">
             <h2>Lawyer application</h2>
+            {(session.user.roles?.length ?? 0) > 1 ? (
+              <div className="role-switcher" aria-label="Assigned workspaces">
+                {session.user.roles?.map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    className={role === session.user.role ? "" : "secondary"}
+                    onClick={() => void switchRole(role)}
+                  >
+                    {label(role)} workspace
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <form onSubmit={submitLawyerApplication}>
+              <label>
+                Legal name
+                <input
+                  value={application.legalName}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      legalName: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
               <label>
                 Display name
                 <input
@@ -800,6 +960,20 @@ export default function Workspace() {
                       email: event.target.value,
                     })
                   }
+                  required
+                />
+              </label>
+              <label>
+                Professional phone
+                <input
+                  value={application.professionalPhone}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      professionalPhone: event.target.value,
+                    })
+                  }
+                  placeholder="+234..."
                   required
                 />
               </label>
@@ -844,6 +1018,31 @@ export default function Workspace() {
                 />
               </label>
               <label>
+                Office address
+                <input
+                  value={application.officeAddress}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      officeAddress: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Firm website
+                <input
+                  type="url"
+                  value={application.website}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      website: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
                 Professional biography
                 <textarea
                   minLength={30}
@@ -881,8 +1080,27 @@ export default function Workspace() {
                   );
                 })}
               </div>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={application.conductDeclaration}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      conductDeclaration: event.target.checked,
+                    })
+                  }
+                  required
+                />
+                I declare that the professional, disciplinary and conflict
+                information supplied is complete and accurate.
+              </label>
               <button
-                disabled={busy || application.practiceAreaCodes.length === 0}
+                disabled={
+                  busy ||
+                  application.practiceAreaCodes.length === 0 ||
+                  !application.conductDeclaration
+                }
               >
                 Submit for verification
               </button>
@@ -897,7 +1115,7 @@ export default function Workspace() {
         </section>
       </main>
     );
-  const admin = ["admin", "super_admin"].includes(session.user.role);
+  const admin = ["operations", "owner"].includes(session.user.role);
   return (
     <main className="workspace">
       <aside>
@@ -922,6 +1140,23 @@ export default function Workspace() {
                   {
                     lawyers.filter(
                       (item) => item.verification_status === "pending",
+                    ).length
+                  }
+                </b>
+              </a>
+              <a
+                className={tab === "applications" ? "active" : ""}
+                onClick={() => setTab("applications")}
+              >
+                Professional applications
+                <b>
+                  {
+                    professionalApplications.filter((item) =>
+                      [
+                        "submitted",
+                        "under_review",
+                        "information_requested",
+                      ].includes(item.state),
                     ).length
                   }
                 </b>
@@ -969,6 +1204,30 @@ export default function Workspace() {
               >
                 Audit trail
               </a>
+              <a
+                className={tab === "providers" ? "active" : ""}
+                onClick={() => setTab("providers")}
+              >
+                Provider readiness
+              </a>
+              <a
+                className={tab === "ai" ? "active" : ""}
+                onClick={() => setTab("ai")}
+              >
+                AI runs
+                <b>
+                  {
+                    aiRuns.filter((item) => item.requires_human_review === 1)
+                      .length
+                  }
+                </b>
+              </a>
+              <a
+                className={tab === "legal" ? "active" : ""}
+                onClick={() => setTab("legal")}
+              >
+                Legal centre
+              </a>
             </>
           ) : null}
         </nav>
@@ -982,6 +1241,19 @@ export default function Workspace() {
             ↗
           </button>
         </div>
+        {(session.user.roles?.length ?? 0) > 1 ? (
+          <div className="aside-roles" aria-label="Assigned workspaces">
+            {session.user.roles?.map((role) => (
+              <button
+                key={role}
+                className={role === session.user.role ? "" : "secondary"}
+                onClick={() => void switchRole(role)}
+              >
+                {label(role)}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </aside>
       <section className="content">
         <header>
@@ -1076,6 +1348,68 @@ export default function Workspace() {
                 ) : null}
               </div>
             ))}
+          </Panel>
+        ) : null}
+        {tab === "applications" ? (
+          <Panel title="Legal professional verification">
+            {professionalApplications.length === 0 ? (
+              <Empty text="No professional applications." />
+            ) : (
+              professionalApplications.map((item) => (
+                <div className="lawyer" key={item.id}>
+                  <div className="avatar warm">
+                    {item.public_name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <strong>{item.legal_name}</strong>
+                    <small>
+                      {item.supreme_court_number} · Called {item.year_of_call} ·
+                      Role access remains separate from marketplace eligibility
+                    </small>
+                  </div>
+                  <span className="pill">{label(item.state)}</span>
+                  {[
+                    "submitted",
+                    "under_review",
+                    "information_requested",
+                  ].includes(item.state) ? (
+                    <>
+                      <button
+                        onClick={() =>
+                          reviewProfessionalApplication(item, "approved")
+                        }
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          reviewProfessionalApplication(
+                            item,
+                            "information_requested",
+                          )
+                        }
+                      >
+                        Request information
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          reviewProfessionalApplication(item, "declined")
+                        }
+                      >
+                        Decline
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ))
+            )}
+            <p className="legal">
+              Approval records identity, practising-list and digital-licence
+              review. Marketplace availability remains off until capabilities,
+              expiry and payout configuration are complete.
+            </p>
           </Panel>
         ) : null}
         {tab === "jobs" ? (
@@ -1276,6 +1610,79 @@ export default function Workspace() {
                 </span>
                 <small>{new Date(item.occurred_at).toLocaleString()}</small>
               </div>
+            ))}
+          </Panel>
+        ) : null}
+        {tab === "providers" ? (
+          <Panel title="Provider capability and verification">
+            {Object.entries(providerCapabilities).map(
+              ([provider, capability]) => (
+                <div className="row" key={provider}>
+                  <span>
+                    <strong>{label(provider)}</strong>
+                    <small>
+                      {capability.implemented
+                        ? "Implementation present"
+                        : "Not implemented"}{" "}
+                      · Provider evidence is separate from local mocks
+                    </small>
+                  </span>
+                  <span
+                    className={`pill ${capability.configured ? "good" : "urgent"}`}
+                  >
+                    {label(capability.status)}
+                  </span>
+                </div>
+              ),
+            )}
+          </Panel>
+        ) : null}
+        {tab === "ai" ? (
+          <Panel title="Redacted AI run diagnostics">
+            {aiRuns.length === 0 ? (
+              <Empty text="No AI runs have been recorded." />
+            ) : (
+              aiRuns.map((run) => (
+                <div className="row" key={run.id}>
+                  <span>
+                    <strong>{label(run.purpose)}</strong>
+                    <small>
+                      {run.model} · {run.prompt_version} · {run.schema_version}{" "}
+                      · {run.latency_ms ?? 0} ms
+                    </small>
+                  </span>
+                  <span
+                    className={`pill ${run.requires_human_review ? "urgent" : "good"}`}
+                  >
+                    {run.requires_human_review ? "Human review" : "Recorded"}
+                  </span>
+                </div>
+              ))
+            )}
+            <p className="legal">
+              Raw prompts, secrets and unrestricted matter content are not
+              displayed here.
+            </p>
+          </Panel>
+        ) : null}
+        {tab === "legal" ? (
+          <Panel title="Versioned Legal Centre">
+            {legalDocuments.map((document) => (
+              <details className="legal-document" key={document.version_id}>
+                <summary>
+                  <strong>{document.title}</strong>
+                  <span className="pill">
+                    v{document.version} · {label(document.status)}
+                  </span>
+                </summary>
+                {document.company_placeholder_present ? (
+                  <p className="notice">
+                    Production publication is blocked while parent-company
+                    details or approvals are unresolved.
+                  </p>
+                ) : null}
+                <pre>{document.content_markdown}</pre>
+              </details>
             ))}
           </Panel>
         ) : null}
