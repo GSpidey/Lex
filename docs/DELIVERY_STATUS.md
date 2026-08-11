@@ -34,7 +34,7 @@ Statuses: `not_started`, `implemented_unverified`, `local_verified`, `provider_v
 | Email and push                                    | implemented_unverified | Postmark and Expo delivery adapters are capability-gated; credentials and provider tests pending                           |
 | Mobile client                                     | provider_verified      | Gradle APK 0.3.0 is staging-connected, installed, cold-launched and visually inspected on Android device `R3CW70E87KD`     |
 | Lawyer/operations web workspace                   | local_verified         | General applications, matter work, consultation, representation, matching, safeguarding and authority controls type-check  |
-| Cloudflare staging deployment                     | provider_verified      | API `f8eefa71`, jobs `b9091ce7`, web `f3ae508e`; API/D1 and web remote health checks pass                                  |
+| Cloudflare staging deployment                     | provider_verified      | API `5ee727df`, jobs `b9091ce7`, web `708101c5`; API/D1 and web remote health checks pass                                  |
 | Legal/native-language approvals                   | not_started            | Test content is synthetic; recorded lawyer-co-founder and native-language/privacy approval required                        |
 
 No row may become `provider_verified`, `legal_approved`, or `pilot_ready` without saved evidence for that exact gate.

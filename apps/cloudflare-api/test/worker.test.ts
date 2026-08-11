@@ -172,6 +172,51 @@ describe("Lex Worker", () => {
         roles: ["client", "owner"],
       },
     });
+
+    await env.DB.prepare(
+      "UPDATE auth_challenges SET created_at='2026-08-10T00:00:00.000Z' WHERE destination_hash=?",
+    )
+      .bind(phoneHash)
+      .run();
+    const webRequest = await SELF.fetch(
+      "https://lex.test/v1/auth/otp/request",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-device-id": "founder-web-test",
+        },
+        body: JSON.stringify({
+          channel: "whatsapp",
+          phone,
+          purpose: "sign_in",
+          locale: "en",
+        }),
+      },
+    );
+    expect(webRequest.status).toBe(201);
+    const webChallenge = await webRequest.json<{ challengeId: string }>();
+    const webVerified = await SELF.fetch(
+      "https://lex.test/v1/auth/otp/verify",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          challengeId: webChallenge.challengeId,
+          code: "246810",
+          deviceName: "Lex web workspace",
+        }),
+      },
+    );
+    expect(webVerified.status).toBe(200);
+    const webAuthorization = await webVerified.json<{
+      preAuthToken?: string;
+      mfaSetupRequired?: boolean;
+      accessToken?: string;
+    }>();
+    expect(webAuthorization.preAuthToken).toBeTruthy();
+    expect(webAuthorization.mfaSetupRequired).toBe(true);
+    expect(webAuthorization.accessToken).toBeUndefined();
   });
 
   it("exposes a searchable 52-area catalogue and creates nationwide general intake", async () => {

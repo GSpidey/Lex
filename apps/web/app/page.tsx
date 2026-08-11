@@ -318,21 +318,26 @@ export default function Workspace() {
   async function requestOtp(event: FormEvent) {
     event.preventDefault();
     await run(async () => {
-      const result = await api<{ challengeId: string; devCode?: string }>(
-        "/auth/otp/request",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            channel: "whatsapp",
-            phone,
-            purpose: "sign_in",
-            locale: "en",
-          }),
-        },
-      );
+      const result = await api<{
+        challengeId: string;
+        devCode?: string;
+        stagingTestLogin?: boolean;
+      }>("/auth/otp/request", {
+        method: "POST",
+        body: JSON.stringify({
+          channel: "whatsapp",
+          phone,
+          purpose: "sign_in",
+          locale: "en",
+        }),
+      });
       setChallengeId(result.challengeId);
       if (result.devCode) setCode(result.devCode);
-      setMessage("A verification code was sent through WhatsApp.");
+      setMessage(
+        result.stagingTestLogin
+          ? "Founder staging login is ready. Enter the private six-digit test code."
+          : "A verification code was sent through WhatsApp.",
+      );
     });
   }
   async function verifyOtp(event: FormEvent) {

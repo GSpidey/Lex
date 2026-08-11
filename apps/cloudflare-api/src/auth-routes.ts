@@ -253,7 +253,7 @@ auth.post(
     const userId = challenge.userId ?? crypto.randomUUID();
     const existingAccount = challenge.userId
       ? await context.env.DB.prepare(
-          `SELECT u.role,u.mfa_enabled,u.default_mobile_role,
+          `SELECT u.role,u.mfa_enabled,u.default_mobile_role,u.default_web_role,
                   EXISTS(
                     SELECT 1 FROM user_role_assignments r
                      WHERE r.user_id=u.id AND r.role='client' AND r.status='active'
@@ -265,10 +265,23 @@ auth.post(
             role: string;
             mfa_enabled: number;
             default_mobile_role: string | null;
+            default_web_role: string | null;
             has_client_role: number;
           }>()
       : null;
-    if (existingAccount && existingAccount.has_client_role !== 1) {
+    const webSignIn = input.deviceName?.toLowerCase().includes("web") ?? false;
+    const requestedDefaultRole = existingAccount
+      ? canonicalRole(
+          webSignIn
+            ? (existingAccount.default_web_role ?? existingAccount.role)
+            : (existingAccount.default_mobile_role ?? existingAccount.role),
+        )
+      : "client";
+    if (
+      existingAccount &&
+      (existingAccount.has_client_role !== 1 ||
+        requestedDefaultRole !== "client")
+    ) {
       const preAuthToken = randomToken(32);
       const timestamp = now();
       const purpose = existingAccount.mfa_enabled ? "mfa_verify" : "mfa_setup";
