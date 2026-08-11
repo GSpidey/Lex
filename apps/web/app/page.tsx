@@ -142,27 +142,47 @@ type AuthCountry = {
 };
 
 const AUTH_COUNTRIES: AuthCountry[] = [
-  { iso: "NG", name: "Nigeria", dialCode: "+234", placeholder: "801 234 5678" },
-  { iso: "CA", name: "Canada", dialCode: "+1", placeholder: "437 255 1796" },
+  {
+    iso: "NG",
+    name: "Nigeria",
+    dialCode: "+234",
+    placeholder: "Enter mobile number",
+  },
+  {
+    iso: "CA",
+    name: "Canada",
+    dialCode: "+1",
+    placeholder: "Enter 10-digit number",
+  },
   {
     iso: "GB",
     name: "United Kingdom",
     dialCode: "+44",
-    placeholder: "7510 346561",
+    placeholder: "Enter mobile number",
   },
   {
     iso: "US",
     name: "United States",
     dialCode: "+1",
-    placeholder: "212 555 0100",
+    placeholder: "Enter 10-digit number",
   },
-  { iso: "GH", name: "Ghana", dialCode: "+233", placeholder: "24 123 4567" },
-  { iso: "KE", name: "Kenya", dialCode: "+254", placeholder: "712 345678" },
+  {
+    iso: "GH",
+    name: "Ghana",
+    dialCode: "+233",
+    placeholder: "Enter national number",
+  },
+  {
+    iso: "KE",
+    name: "Kenya",
+    dialCode: "+254",
+    placeholder: "Enter national number",
+  },
   {
     iso: "ZA",
     name: "South Africa",
     dialCode: "+27",
-    placeholder: "82 123 4567",
+    placeholder: "Enter national number",
   },
 ];
 
@@ -897,6 +917,10 @@ export default function Workspace() {
                         required
                       />
                     </div>
+                    <small className="field-help">
+                      Enter the national number without the country code. A
+                      leading 0 is accepted.
+                    </small>
                   </div>
                 </label>
                 <button disabled={busy || normalizedNationalNumber.length < 7}>

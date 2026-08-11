@@ -8,6 +8,10 @@
   "preview_urls": false,
   "minify": true,
   "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "services": [
+    { "binding": "API", "service": "lex-staging-api" },
+    { "binding": "REALTIME", "service": "lex-staging-realtime" },
+  ],
   "assets": {
     "directory": "../web/out",
     "binding": "ASSETS",

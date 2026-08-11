@@ -154,6 +154,12 @@ select:focus {
   width: 100%;
   color: var(--ink);
 }
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
 .national-number {
   display: grid;
   grid-template-columns: auto 1fr;

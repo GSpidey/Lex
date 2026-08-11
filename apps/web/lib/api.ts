@@ -1,7 +1,6 @@
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787/v1";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/v1";
 export const REALTIME_URL =
-  process.env.NEXT_PUBLIC_REALTIME_URL ?? "http://localhost:8790/v1";
+  process.env.NEXT_PUBLIC_REALTIME_URL ?? "/realtime/v1";
 
 export interface SessionUser {
   id: string;
@@ -36,14 +35,21 @@ export async function api<T>(
   init: RequestInit = {},
   token?: string,
 ): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    });
+  } catch {
+    throw new Error(
+      "Lex could not reach the staging service. Check your connection and try again.",
+    );
+  }
   const body = (await response.json().catch(() => ({}))) as {
     message?: string;
   };
