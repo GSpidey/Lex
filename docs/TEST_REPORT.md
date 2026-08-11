@@ -1,32 +1,33 @@
-# Lex Controlled-Pilot Verification Report
+# Nationwide Migration Verification Report
 
-Date: 2026-08-09
-Environment: isolated Cloudflare staging plus local Windows/physical Android testing; synthetic data only.
+Date: 2026-08-10
+Scope: `C:\Users\ahmed\Applications\Lex` only; synthetic data only.
 
-## Verified
+## Current branch evidence
 
-- Work remained inside `C:\Users\ahmed\Applications\Lex`; no sibling project or pre-existing Cloudflare resource was modified or reused.
-- New deployments are live at `lex-staging-api.wispy-silence-1cb0.workers.dev`, `lex-staging-jobs.wispy-silence-1cb0.workers.dev`, and `lex-staging-web.wispy-silence-1cb0.workers.dev`.
-- New EU D1 `lex-staging-db` has 28 tables after two Wrangler migrations and a synthetic tenant/landlord seed. Migrations also apply from empty locally.
-- New private EU R2 `lex-staging-private-eu` is empty and has no public development URL. An accidental, newly-created empty global bucket namespace was detected and removed; the intended EU bucket was retained and rebound explicitly with `jurisdiction = eu`.
-- New `lex-staging-jobs`, `lex-staging-notifications`, and `lex-staging-dead-letter` queues are attached to consumers, bounded retries, and a five-minute maintenance Cron.
-- Generated Wrangler bindings, strict TypeScript checks, four Worker/D1 integration tests, seven existing domain/provider tests, static web production build, and all three deployment dry-runs pass.
-- API health and OpenAPI return HTTP 200 remotely; web returns HTTP 200 with security policy headers and exact-origin CORS.
-- The controlled staging number `+2348000000001` completed request and verification against the live Worker and returned a client session. A different number returned HTTP 503 because Meta is not configured. The six-digit test code exists only as the `STAGING_TEST_OTP_CODE` Worker secret and the normal five-attempt, expiry, supersession, destination, IP, and device controls still apply.
-- The Android sign-in interface defaults to Nigeria and provides a country/calling-code selector for Nigeria, Ghana, Kenya, South Africa, Uganda, Rwanda, the United Kingdom, the United States/Canada, the United Arab Emirates, and India.
-- Representative deployed startup time reported 27-52 ms for the API and 4-5 ms for jobs. The Free plan rejected a paid-only explicit CPU limit, so no plan upgrade was made and platform defaults remain enforced.
-- A fresh Gradle `assembleRelease --no-parallel` APK (98,732,152 bytes; SHA-256 `C02C61187A3F5CB1AA9A984248859D0D052B88F7B41BA722381DC12F050AB9A8`) was installed on device `R3CW70E87KD`. Serial assembly avoided a transient parallel CMake collision in Reanimated; the isolated failed task and full serial build both passed.
-- Android confirmed `com.lexnigeria.test.MainActivity` in the foreground. The rendered country selector and all ten choices were checked, the controlled OTP was entered, and the authenticated client home screen was reached without Metro or a development server.
+- Branch: `agent/full-spectrum-legal-access`, preserving `master` as the tenancy migration baseline.
+- Additive D1 migration 0003 applies from empty locally and seeds 52 practice areas, versioned services and nationwide synthetic coverage while retaining tenancy identifiers.
+- Direct strict TypeScript checks pass for contracts, jurisdictions, legacy API fallback, Cloudflare API/jobs/realtime, mobile and web at the latest recorded run.
+- Contract/jurisdiction tests pass. Cloudflare Worker/D1 integration tests pass for health, single-use controlled OTP, non-bypass numbers, 52-area search, nationwide Hausa intake and protected minor-data gating.
+- Realtime Worker health test passes. A full Durable Object socket test remains required against deployed service bindings.
+- Current API implements general intake/matching, protected accounts, consultation, representation, direct-split payment snapshots, typed WhatsApp intake and versioned content controls.
+- Current app/workspace builds type-check with the general catalogue and end-to-end user controls.
+- Migration 0003 is applied remotely after a targeted local export. Remote API v2 health reports D1 reachable; catalogue count is 52; realtime health and web HTTP 200 pass.
+- Deployed versions: API `b2c18c83-4c6e-4710-93b9-1553a732e92e`, jobs `32d77b40-5540-4974-af65-ff914f80e604`, realtime `c44fb299-32d5-4e57-8e16-2b08bc37c7ab`, web `44dfc269-f9f4-4d7b-ae86-0f5b337156de`.
+- Gradle APK 0.2.0 (version code 2) is 98,759,304 bytes with SHA-256 `9831F4011AE1441E8CBCC47330DC78DC80EAFF5DFE7B8CA8DD1727D37D004B02`. It embeds the approved API/realtime `workers.dev` endpoints, contains no `10.0.2.2` or `127.0.0.1`, installed successfully on `R3CW70E87KD`, launched without Metro and rendered the nationwide legal catalogue.
 
-## Still gated
+## Prior isolated staging evidence retained
 
-- Real Meta WhatsApp test-number OTP and status delivery require Meta test credentials and an approved authentication template. Only the exact synthetic staging client number bypasses delivery; every other number returns an explicit unavailable response.
-- The OpenAI secret is configured on both Lex staging Workers, but the account currently has no credit. No billed request has been made; transcription remains provider-unverified. Intake extraction/drafting still requires implementation beyond the credential.
-- Paystack/Flutterwave sandbox settlement/refunds, push delivery, and email require their test credentials.
-- Remote R2 matter-access, queue failure/replay, payment-webhook replay, and an isolated D1 Time Travel restore drill remain to be exercised.
-- Pidgin legal copy, seeded legal workflows, pricing, commission treatment, disclosures, and public claims require recorded lawyer-co-founder review.
-- The current Android release uses local test signing. Production signing, iOS signing, a custom domain, production credentials, and public distribution are intentionally absent.
+The existing Lex-only API/jobs/web Workers, EU D1, private EU R2 and three queues were previously deployed and health-checked. The prior tenancy APK was installed and reached the controlled staging login on Android device `R3CW70E87KD`. That evidence proves the baseline infrastructure, not the current nationwide release.
+
+## Outstanding verification
+
+- Exercise authenticated realtime sockets, queue retry/DLQ, provider webhook replay and isolated D1 Time Travel recovery remotely.
+- Provider-level Meta, OpenAI, Paystack, Flutterwave, Postmark and Expo tests need credentials/credit. No emulator or mock will be reported as provider verification.
+- Complete the authenticated provider-backed journey on the installed APK after Meta/payment credentials are available. The existing server-held controlled OTP differed from the local test value; one remote attempt was rejected and was not retried.
+- Run accessibility/security/dependency checks and save the final consolidated evidence.
+- Obtain lawyer-co-founder and native-language/privacy approvals before any real-client or public use.
 
 ## Safety boundary
 
-This proves a deployed synthetic staging foundation and a physical-device client artifact. The controlled login is a temporary staging aid, not a substitute for WhatsApp verification, and must be disabled before any production build. It does not establish provider-account readiness, legal approval, production security accreditation, or pilot readiness with real clients or money.
+Nothing here establishes legal approval, provider readiness, production security accreditation or permission to use real matters or money. The 20/80 split, all legal text and all language copy remain synthetic test inputs.

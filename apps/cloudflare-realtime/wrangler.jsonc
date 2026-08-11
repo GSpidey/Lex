@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lex-staging-realtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "minify": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "vars": { "APP_ENV": "staging" },
+  "services": [{ "binding": "API", "service": "lex-staging-api" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONSULTATION_ROOM", "class_name": "ConsultationRoom" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ConsultationRoom"] }],
+}

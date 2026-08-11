@@ -1,46 +1,43 @@
 # Lex
 
-Lex is a Nigeria-first managed legal-access platform designed for country-by-country expansion. It guides adult tenants and landlords from structured intake through evidence, verified-lawyer matching, conflict review, sandbox payment, lawyer-reviewed assessment, and resolution. It is not a lawyer directory and it does not provide autonomous legal advice.
+Lex is a Nigeria-first, nationwide managed legal-access platform for people and organizations with legal problems. It is not a lawyer directory, and tenancy is one service module within a searchable full-spectrum legal catalogue.
 
-## Current delivery target
+The test release guides a client from typed or voice intake through client-confirmed classification, verified-lawyer matching, conflict clearance, sandbox payment, scheduled secure consultation, lawyer-written assessment, and—where separately agreed—representation tracking.
 
-The controlled pilot is Android-first, Lagos-only for paid service, and supports English and reviewed Pidgin. Nationwide Nigerian intake remains available, but non-Lagos matters stop at an intake-only waitlist.
+## Test-release scope
 
-The active staging direction is Cloudflare-native:
+- Android client plus iOS-ready Expo source and Gradle-native Android project.
+- Responsive lawyer and operations workspace.
+- All 36 states and the FCT, with a catalogue of 30+ granular practice areas.
+- Adult individual, safeguarded minor, and verified-organization account contexts.
+- English, Pidgin, Hausa, Yoruba, and Igbo intake; English is the authoritative lawyer-facing record.
+- App and WhatsApp channel continuity, including voice notes and documents.
+- Scheduled in-app live text consultation through a consultation-scoped Durable Object.
+- Lawyer-attested written assessment and optional representation proposals, milestones, invoices, tasks, and lawyer-confirmed deadlines.
+- Paystack default and Flutterwave fallback in sandbox only.
+- Cloudflare-native staging using only isolated `lex-staging-*` resources.
 
-- Hono Workers for `/v1` API and provider webhooks.
-- D1 with Drizzle-compatible portable SQL.
-- Private EU-restricted R2 for synthetic evidence.
-- Queues plus Cron Triggers for background and SLA work.
-- A static lawyer/operations web workspace on Workers Static Assets.
-- `workers.dev` addresses until a dedicated Lex domain is approved.
+## Safety and launch gates
 
-The existing NestJS/PostgreSQL/Redis/MinIO implementation remains in the repository as a production-portability fallback until Cloudflare behavior parity is proven. No existing Cloudflare project, domain, Worker, database, queue, or bucket may be reused.
+AI may classify, extract, summarize, translate intake confirmations, transcribe, and assist lawyer drafting. It cannot provide autonomous legal advice, calculate court deadlines, select the final lawyer, or mark work lawyer-reviewed. Urgent matters, safeguarding cases, and unsupported matching always route to people before payment.
 
-## Pilot guardrails
+The NGN 10,000 default and configurable 20/80 split are synthetic sandbox settings. Production activation remains blocked pending recorded lawyer-co-founder approval of legal content, engagement terms, fee-sharing/client-money implications, privacy, safeguarding, translations, and public claims. Provider-backed features remain unverified until their test credentials and real provider evidence exist.
 
-- WhatsApp is limited initially to OTP, recovery/status notices, information requests, and assessment-ready links. Full conversational WhatsApp intake is deferred.
-- English is the authoritative lawyer-facing legal record. Pidgin supports client intake and confirmation.
-- AI may assist intake, transcription, extraction, summarization, classification, drafting, and routing. Only a lawyer can approve or deliver a legal assessment.
-- The NGN 10,000 price and 20/80 split are sandbox configuration only pending lawyer-co-founder approval.
-- Staging uses synthetic data only. Real clients, production money, and public legal claims are prohibited.
-- Until Meta OTP is configured, staging client access is limited to the synthetic number `+2348000000001` and a six-digit code held only as a Cloudflare secret. This bypass is unavailable for lawyer/admin roles and must be disabled before production.
-- Start on the Cloudflare Workers Free plan. Any paid feature or upgrade requires the user's approval.
+## Architecture
 
-## Project documents
+- `apps/cloudflare-api`: Hono REST/OpenAPI API, authorization, D1, R2, webhooks.
+- `apps/cloudflare-jobs`: Queue consumers, provider work, reconciliation, Cron.
+- `apps/cloudflare-realtime`: consultation-scoped Durable Object and WebSocket coordination.
+- `apps/cloudflare-web`: static delivery Worker for the lawyer/operations build.
+- `apps/mobile`: Expo/React Native client with checked-in Gradle Android project.
+- `apps/web`: responsive lawyer/operations interface.
+- `packages/contracts`: channel-neutral domain and provider contracts.
+- `packages/jurisdictions`: versioned Nigerian catalogue and service workflows.
+- `packages/d1`: portable D1/SQLite schema definitions.
 
-- [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) - durable product context and legal/technical guardrails.
-- [docs/MVP_PLAN.md](docs/MVP_PLAN.md) - controlled-pilot implementation plan.
-- [docs/DECISIONS.md](docs/DECISIONS.md) - locked decisions and approval gates.
-- [docs/DELIVERY_STATUS.md](docs/DELIVERY_STATUS.md) - evidence-based implementation status.
-- [docs/DEFERRED_ROADMAP.md](docs/DEFERRED_ROADMAP.md) - explicitly deferred work.
-- [docs/D1_POSTGRES_PORTABILITY.md](docs/D1_POSTGRES_PORTABILITY.md) - database portability contract.
-- [docs/TEST_REPORT.md](docs/TEST_REPORT.md) - verification record and external-test boundaries.
-- [AGENTS.md](AGENTS.md) - scope and continuity instructions.
+The legacy NestJS/PostgreSQL implementation remains a portability reference. No existing non-Lex Cloudflare resource may be inspected, reused, renamed, or modified.
 
-## Local development
-
-Prerequisites are Node.js 24+, pnpm 11+, Java 17+, and Android SDK. Docker remains optional for the fallback server architecture and is not required for Cloudflare staging.
+## Local verification
 
 ```powershell
 pnpm.cmd install
@@ -49,8 +46,7 @@ pnpm.cmd cf:db:local
 pnpm.cmd typecheck
 pnpm.cmd test
 pnpm.cmd cf:dry-run
+pnpm.cmd apk
 ```
 
-The isolated Workers/D1/R2/Queues staging foundation is deployed and the staging Gradle APK has been installed on a physical Android device. The client sign-in page defaults to Nigeria and includes a multi-country calling-code selector. Provider-backed WhatsApp, AI, payment, push, and email tests remain gated by test credentials. See `docs/TEST_REPORT.md` for exact evidence and limitations.
-
-Never place secrets in source, environment examples, APKs, logs, or browser-visible configuration.
+See [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md), [docs/MVP_PLAN.md](docs/MVP_PLAN.md), [docs/DELIVERY_STATUS.md](docs/DELIVERY_STATUS.md), and [docs/TEST_REPORT.md](docs/TEST_REPORT.md). Never place credentials in source, APK configuration, logs, or committed environment files.

@@ -36,6 +36,18 @@ webhooks.post("/meta", async (context) => {
             from?: string;
             type?: string;
             text?: { body?: string };
+            audio?: { id?: string; mime_type?: string };
+            image?: { id?: string; mime_type?: string; caption?: string };
+            document?: {
+              id?: string;
+              mime_type?: string;
+              filename?: string;
+              caption?: string;
+            };
+            interactive?: {
+              button_reply?: { id?: string; title?: string };
+              list_reply?: { id?: string; title?: string };
+            };
           }>;
           statuses?: Array<{ id?: string; status?: string }>;
         };

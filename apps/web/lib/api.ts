@@ -1,5 +1,7 @@
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787/v1";
+export const REALTIME_URL =
+  process.env.NEXT_PUBLIC_REALTIME_URL ?? "http://localhost:8790/v1";
 
 export interface SessionUser {
   id: string;

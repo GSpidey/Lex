@@ -5,6 +5,12 @@ const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
 if (APP_ENV !== "local" && !configuredApiUrl)
   throw new Error("EXPO_PUBLIC_API_URL is required outside local development");
 export const API_URL = configuredApiUrl ?? "http://10.0.2.2:8787/v1";
+const configuredRealtimeUrl = process.env.EXPO_PUBLIC_REALTIME_URL;
+if (APP_ENV !== "local" && !configuredRealtimeUrl)
+  throw new Error(
+    "EXPO_PUBLIC_REALTIME_URL is required outside local development",
+  );
+export const REALTIME_URL = configuredRealtimeUrl ?? "http://10.0.2.2:8790/v1";
 export interface Session {
   accessToken: string;
   refreshToken: string;

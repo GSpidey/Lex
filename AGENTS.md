@@ -2,34 +2,24 @@
 
 ## Scope boundary
 
-`C:\Users\ahmed\Applications\Lex` is the complete project scope. Do not inspect, edit, move, initialize, delete, or otherwise modify its parent directory, sibling folders, or unrelated projects unless the user explicitly expands the scope.
+`C:\Users\ahmed\Applications\Lex` is the complete project scope. Never inspect, edit, move, initialize, delete, or modify its parent, siblings, unrelated projects, or non-Lex Cloudflare resources.
 
 ## Session startup
 
-Before proposing or making project changes, read:
+Read `README.md`, `PROJECT_CONTEXT.md`, `docs/MVP_PLAN.md`, `docs/DECISIONS.md`, `docs/DELIVERY_STATUS.md`, and `docs/TEST_REPORT.md`. Verify the current path and working tree before edits. Preserve unrelated user changes and distinguish implementation from verification.
 
-1. `README.md`
-2. `PROJECT_CONTEXT.md`
-3. `docs/MVP_PLAN.md`
-4. `docs/DECISIONS.md`
+## Current product contract
 
-Inspect the current project state and preserve existing work. State clearly when a result has not been tested or verified.
+- Nationwide full-spectrum Nigerian legal access for adult individuals, safeguarded minors, and approved organizations.
+- Tenancy is one migrated service module, not the product identity.
+- Reusable global services are separated from versioned jurisdiction/service legal content.
+- Matching is eligibility-based and approval-controlled; no bidding, bought ranking, or unverified public listing.
+- Urgent, safeguarding, unsupported-coverage, and low-confidence cases route to human operations.
+- AI supports intake, transcription, extraction, summarization, translation, routing, and lawyer drafting only. It never provides unsupervised legal advice or lawyer attestation.
+- Consultation supports scheduled in-app live text, secure messages, voice notes, and evidence; native audio/video calls are out of scope.
+- Representation tracking is a separate accepted engagement. Lex does not calculate legal deadlines, file, appear, guarantee outcomes, or claim to hold client money.
+- All price/split behavior is sandbox-only pending lawyer-co-founder approval.
 
-## Product guardrails
+## Staging boundary
 
-- Nigeria is the first launch jurisdiction; global expansion is country-by-country.
-- Keep reusable platform services separate from jurisdiction-specific legal rules and workflows.
-- Build a managed legal-access workflow, not just a lawyer directory.
-- Keep the initial MVP narrow and controlled.
-- Restrict initial AI use to intake, summarization, classification, drafting support, routing, and approved operational assistance.
-- Do not implement unsupervised high-risk legal advice or imply lawyer review that did not occur.
-- Do not assume a percentage commission, referral, fee-sharing, payment, or client-money model is legally acceptable.
-- Require lawyer co-founder approval for legal workflows, templates, claims, disclosures, escalation rules, and commercial structures with professional-conduct implications.
-
-## Current implementation state
-
-Implementation follows the Cloudflare controlled-pilot plan in `docs/MVP_PLAN.md`. The active synthetic staging runtime uses only newly created `lex-staging-*` Workers, D1, R2, Queues, and Cron resources. Never reuse or change a pre-existing Cloudflare resource.
-
-The pilot is Android-first, Lagos service-only, and English/Pidgin. WhatsApp is limited to OTP and status continuity until the deferred conversational phase. The legacy NestJS/PostgreSQL/Redis/MinIO code remains a portability fallback.
-
-Consult `docs/DELIVERY_STATUS.md` and `docs/TEST_REPORT.md` before claiming completion. Keep provider calls in sandbox/test environments until credentials and public-launch approvals are explicitly supplied.
+Use only isolated `lex-staging-*` Cloudflare resources. Existing unrelated Workers, domains, buckets, databases, queues, and servers remain untouched. Provider calls stay in test environments. Never weaken security to meet a Free-plan limit; request approval for an upgrade if measurements require it.

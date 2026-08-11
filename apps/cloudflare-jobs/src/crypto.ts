@@ -6,8 +6,25 @@ async function key(secret: string) {
   const bytes = fromBase64(secret);
   if (bytes.byteLength !== 32) throw new Error("Invalid field encryption key");
   return crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, [
+    "encrypt",
     "decrypt",
   ]);
+}
+function toBase64(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+export async function encrypt(value: string, secret: string) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const body = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      await key(secret),
+      encoder.encode(value),
+    ),
+  );
+  return `${toBase64(iv)}.${toBase64(body)}`;
 }
 export async function decrypt(value: string, secret: string) {
   const [iv, body] = value.split(".");

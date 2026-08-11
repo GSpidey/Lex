@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useState } from "react";
 import {
   api,
   clearSession,
+  REALTIME_URL,
   readSession,
   saveSession,
   type Session,
@@ -15,6 +16,8 @@ type Matter = {
   urgency: string;
   state_code: string;
   version: number;
+  practice_area_code?: string;
+  client_type?: string;
   due_at?: string;
 };
 type Lawyer = {
@@ -54,6 +57,46 @@ type MatterDetail = Matter & {
   structuredSummary?: { summary?: string; facts?: string[] };
   messages: Array<{ id: string; body: string; created_at: string }>;
   evidence: Array<{ id: string; file_name: string; status: string }>;
+  consultation?: {
+    id: string;
+    state: string;
+    scheduled_start?: string;
+    scheduled_end?: string;
+  } | null;
+};
+type PracticeArea = { code: string; name: string; group: string };
+type MatchingRequest = {
+  id: string;
+  matter_id: string;
+  practice_area_code: string;
+  state_code: string;
+  urgency: string;
+  state: string;
+  version: number;
+  created_at: string;
+};
+type SafeguardingReview = {
+  id: string;
+  reason_code: string;
+  state: string;
+  version: number;
+  minor_profile_id?: string;
+  matter_id?: string;
+  created_at: string;
+};
+type AuthorityReview = {
+  id: string;
+  legal_name: string;
+  registration_number: string;
+  decision: string;
+  version: number;
+};
+type GuardianReview = {
+  id: string;
+  minor_profile_id: string;
+  relationship: string;
+  status: string;
+  version: number;
 };
 
 const label = (value: string) =>
@@ -70,13 +113,37 @@ export default function Workspace() {
   const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
   const [mfaSecret, setMfaSecret] = useState("");
   const [tab, setTab] = useState<
-    "matters" | "lawyers" | "jobs" | "privacy" | "audits"
+    | "matters"
+    | "lawyers"
+    | "matching"
+    | "safeguarding"
+    | "jobs"
+    | "privacy"
+    | "audits"
   >("matters");
   const [matters, setMatters] = useState<Matter[]>([]);
   const [lawyers, setLawyers] = useState<Lawyer[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [privacy, setPrivacy] = useState<Privacy[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
+  const [matchingRequests, setMatchingRequests] = useState<MatchingRequest[]>(
+    [],
+  );
+  const [safeguarding, setSafeguarding] = useState<SafeguardingReview[]>([]);
+  const [authorityReviews, setAuthorityReviews] = useState<AuthorityReview[]>(
+    [],
+  );
+  const [guardianReviews, setGuardianReviews] = useState<GuardianReview[]>([]);
+  const [catalog, setCatalog] = useState<PracticeArea[]>([]);
+  const [application, setApplication] = useState({
+    displayName: "",
+    email: "",
+    supremeCourtNumber: "",
+    yearOfCall: String(new Date().getFullYear()),
+    firmName: "",
+    bio: "",
+    practiceAreaCodes: [] as string[],
+  });
   const [selected, setSelected] = useState<MatterDetail | null>(null);
   const [assessment, setAssessment] = useState({
     title: "",
@@ -84,6 +151,19 @@ export default function Workspace() {
     limitations: "",
     nextSteps: "",
   });
+  const [proposal, setProposal] = useState({
+    scope: "",
+    exclusions: "",
+    feeSummary: "",
+    expectedExpenses: "",
+    cancellationTerms: "",
+    clientResponsibilities: "",
+    milestoneTitle: "",
+    milestoneAmount: "",
+  });
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [liveBody, setLiveBody] = useState("");
+  const [liveSocket, setLiveSocket] = useState<WebSocket | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   useEffect(() => {
@@ -109,19 +189,54 @@ export default function Workspace() {
     await run(async () => {
       const list = await api<Matter[]>("/matters", {}, active.accessToken);
       setMatters(list);
+      const catalogue = await api<{ groups: Array<{ items: PracticeArea[] }> }>(
+        "/catalog/practice-areas",
+      );
+      setCatalog(catalogue.groups.flatMap((group) => group.items));
       if (["admin", "super_admin"].includes(active.user.role)) {
-        const [lawyerRows, jobRows, privacyRows, auditRows] = await Promise.all(
-          [
-            api<Lawyer[]>("/admin/lawyers", {}, active.accessToken),
-            api<Job[]>("/admin/jobs", {}, active.accessToken),
-            api<Privacy[]>("/admin/privacy", {}, active.accessToken),
-            api<Audit[]>("/admin/audits", {}, active.accessToken),
-          ],
-        );
+        const [
+          lawyerRows,
+          jobRows,
+          privacyRows,
+          auditRows,
+          matchingRows,
+          safeguardingRows,
+          authorityRows,
+          guardianRows,
+        ] = await Promise.all([
+          api<Lawyer[]>("/admin/lawyers", {}, active.accessToken),
+          api<Job[]>("/admin/jobs", {}, active.accessToken),
+          api<Privacy[]>("/admin/privacy", {}, active.accessToken),
+          api<Audit[]>("/admin/audits", {}, active.accessToken),
+          api<MatchingRequest[]>(
+            "/admin/matching-assistance",
+            {},
+            active.accessToken,
+          ),
+          api<SafeguardingReview[]>(
+            "/admin/safeguarding",
+            {},
+            active.accessToken,
+          ),
+          api<AuthorityReview[]>(
+            "/admin/authority-reviews",
+            {},
+            active.accessToken,
+          ),
+          api<GuardianReview[]>(
+            "/admin/guardian-links",
+            {},
+            active.accessToken,
+          ),
+        ]);
         setLawyers(lawyerRows);
         setJobs(jobRows);
         setPrivacy(privacyRows);
         setAudits(auditRows);
+        setMatchingRequests(matchingRows);
+        setSafeguarding(safeguardingRows);
+        setAuthorityReviews(authorityRows);
+        setGuardianReviews(guardianRows);
       }
     });
   }
@@ -229,6 +344,79 @@ export default function Workspace() {
       await loadWorkspace();
     });
   }
+  async function assignMatching(request: MatchingRequest, lawyerId: string) {
+    if (!session || !lawyerId) return;
+    await run(async () => {
+      await api(
+        `/admin/matching-assistance/${request.id}/assign`,
+        {
+          method: "POST",
+          body: JSON.stringify({ lawyerId, version: request.version }),
+        },
+        session.accessToken,
+      );
+      await loadWorkspace();
+    });
+  }
+  async function resolveSafeguarding(
+    review: SafeguardingReview,
+    resolution: "restricted_continue" | "guardian_required" | "closed",
+  ) {
+    if (!session) return;
+    await run(async () => {
+      await api(
+        `/admin/safeguarding/${review.id}/resolve`,
+        {
+          method: "POST",
+          body: JSON.stringify({ resolution, version: review.version }),
+        },
+        session.accessToken,
+      );
+      await loadWorkspace();
+    });
+  }
+  async function decideAuthority(
+    review: AuthorityReview,
+    decision: "approved" | "declined",
+  ) {
+    if (!session) return;
+    await run(async () => {
+      await api(
+        `/admin/authority-reviews/${review.id}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            version: review.version,
+            reason: "Recorded operations review",
+          }),
+        },
+        session.accessToken,
+      );
+      await loadWorkspace();
+    });
+  }
+  async function decideGuardian(
+    review: GuardianReview,
+    decision: "verified" | "declined" | "safeguarding_review",
+  ) {
+    if (!session) return;
+    await run(async () => {
+      await api(
+        `/admin/guardian-links/${review.id}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            version: review.version,
+            reason: "Recorded operations review",
+          }),
+        },
+        session.accessToken,
+      );
+      await loadWorkspace();
+    });
+  }
   async function setAvailability(available: boolean, urgentAvailable: boolean) {
     if (!session) return;
     await run(async () => {
@@ -238,6 +426,76 @@ export default function Workspace() {
         session.accessToken,
       );
       setMessage("Availability updated.");
+    });
+  }
+  async function submitLawyerApplication(event: FormEvent) {
+    event.preventDefault();
+    if (!session) return;
+    await run(async () => {
+      await api(
+        "/lawyer/application",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            displayName: application.displayName,
+            email: application.email,
+            phone,
+            supremeCourtNumber: application.supremeCourtNumber,
+            yearOfCall: Number(application.yearOfCall),
+            firmName: application.firmName || undefined,
+            bio: application.bio,
+            languages: ["en"],
+            stateCodes: [
+              "AB",
+              "AD",
+              "AK",
+              "AN",
+              "BA",
+              "BY",
+              "BE",
+              "BO",
+              "CR",
+              "DE",
+              "EB",
+              "ED",
+              "EK",
+              "EN",
+              "FC",
+              "GO",
+              "IM",
+              "JI",
+              "KD",
+              "KN",
+              "KT",
+              "KE",
+              "KO",
+              "KW",
+              "LA",
+              "NA",
+              "NI",
+              "OG",
+              "ON",
+              "OS",
+              "OY",
+              "PL",
+              "RI",
+              "SO",
+              "TA",
+              "YO",
+              "ZA",
+            ],
+            practiceAreaCodes: application.practiceAreaCodes,
+            serviceCodes: [],
+            consultationModes: ["live_text", "voice_note", "secure_message"],
+            tenancyRoles: ["tenant", "landlord"],
+            urgentAvailable: false,
+          }),
+        },
+        session.accessToken,
+      );
+      setMessage(
+        "Application submitted. Sign out and sign in again to set up mandatory MFA and see verification status.",
+      );
     });
   }
   async function conflict(decision: "accepted" | "declined") {
@@ -285,6 +543,109 @@ export default function Workspace() {
       await loadWorkspace();
     });
   }
+  async function scheduleConsultation() {
+    if (!session || !selected) return;
+    await run(async () => {
+      await api(
+        "/consultations",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            matterId: selected.id,
+            startsAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+            durationMinutes: 60,
+            mode: "live_text",
+            timeZone:
+              Intl.DateTimeFormat().resolvedOptions().timeZone ||
+              "Africa/Lagos",
+            idempotencyKey: `web:${selected.id}:initial`,
+          }),
+        },
+        session.accessToken,
+      );
+      await openMatter(selected);
+    });
+  }
+  async function joinConsultation() {
+    if (!session || !selected?.consultation) return;
+    await run(async () => {
+      const token = await api<{ token: string }>(
+        `/consultations/${selected.consultation!.id}/realtime-token`,
+        { method: "POST" },
+        session.accessToken,
+      );
+      liveSocket?.close();
+      const socket = new WebSocket(
+        `${REALTIME_URL.replace(/^http/u, "ws")}/consultations/${selected.consultation!.id}`,
+        ["lex.realtime.v1", `bearer.${token.token}`],
+      );
+      socket.onopen = () => {
+        setLiveConnected(true);
+        setMessage("Live consultation connected.");
+      };
+      socket.onclose = () => setLiveConnected(false);
+      socket.onerror = () =>
+        setMessage(
+          "Live consultation could not connect; secure matter messaging remains available.",
+        );
+      socket.onmessage = () => void openMatter(selected);
+      setLiveSocket(socket);
+    });
+  }
+  function sendLiveMessage() {
+    if (
+      !liveSocket ||
+      liveSocket.readyState !== WebSocket.OPEN ||
+      !liveBody.trim()
+    )
+      return;
+    liveSocket.send(
+      JSON.stringify({
+        type: "message",
+        clientMessageId: crypto.randomUUID(),
+        body: liveBody.trim(),
+      }),
+    );
+    setLiveBody("");
+  }
+  async function offerRepresentation(event: FormEvent) {
+    event.preventDefault();
+    if (!session || !selected) return;
+    await run(async () => {
+      await api(
+        `/engagements/${selected.id}/proposals`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            scope: proposal.scope,
+            exclusions: proposal.exclusions,
+            feeBasis: "milestone",
+            feeSummary: proposal.feeSummary,
+            expectedExpenses: proposal.expectedExpenses,
+            cancellationTerms: proposal.cancellationTerms,
+            clientResponsibilities: proposal.clientResponsibilities,
+            milestones: proposal.milestoneTitle
+              ? [
+                  {
+                    title: proposal.milestoneTitle,
+                    amountMinor: proposal.milestoneAmount
+                      ? Math.round(Number(proposal.milestoneAmount) * 100)
+                      : undefined,
+                  },
+                ]
+              : [],
+            lawyerAttestation: true,
+          }),
+        },
+        session.accessToken,
+      );
+      setMessage(
+        "Representation proposal offered for the client to review separately.",
+      );
+      setSelected(null);
+      await loadWorkspace();
+    });
+  }
   function signOut() {
     clearSession();
     setSession(null);
@@ -315,7 +676,7 @@ export default function Workspace() {
         </section>
         <section className="login-panel">
           <div className="login-card">
-            <p className="eyebrow">Controlled pilot workspace</p>
+            <p className="eyebrow">Nationwide synthetic workspace</p>
             <h2>
               {preAuth
                 ? "Authenticator verification"
@@ -399,12 +760,137 @@ export default function Workspace() {
   if (session.user.role === "client")
     return (
       <main className="auth-shell">
-        <section className="login-panel">
+        <section className="brand-panel">
+          <div className="logo">L</div>
+          <p className="eyebrow">Join the verified Lex network</p>
+          <h1>
+            Apply as a<br />
+            <em>Nigerian lawyer.</em>
+          </h1>
+          <p className="lede">
+            Applications are open. Marketplace access remains hidden until
+            operations records current practising-list and licence verification.
+          </p>
+        </section>
+        <section className="login-panel scroll-panel">
           <div className="login-card">
-            <h2>Workspace access is restricted</h2>
-            <p className="muted">
-              This responsive workspace is for approved lawyers and Lex
-              operations. Use the mobile client for client matters.
+            <h2>Lawyer application</h2>
+            <form onSubmit={submitLawyerApplication}>
+              <label>
+                Display name
+                <input
+                  value={application.displayName}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      displayName: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Professional email
+                <input
+                  type="email"
+                  value={application.email}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      email: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Supreme Court / NBA identifier
+                <input
+                  value={application.supremeCourtNumber}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      supremeCourtNumber: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Year of call
+                <input
+                  type="number"
+                  min="1900"
+                  value={application.yearOfCall}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      yearOfCall: event.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Firm name
+                <input
+                  value={application.firmName}
+                  onChange={(event) =>
+                    setApplication({
+                      ...application,
+                      firmName: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Professional biography
+                <textarea
+                  minLength={30}
+                  value={application.bio}
+                  onChange={(event) =>
+                    setApplication({ ...application, bio: event.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label>Practice capabilities</label>
+              <div className="capability-grid">
+                {catalog.map((area) => {
+                  const selected = application.practiceAreaCodes.includes(
+                    area.code,
+                  );
+                  return (
+                    <button
+                      key={area.code}
+                      type="button"
+                      className={selected ? "selected-capability" : "secondary"}
+                      onClick={() =>
+                        setApplication({
+                          ...application,
+                          practiceAreaCodes: selected
+                            ? application.practiceAreaCodes.filter(
+                                (code) => code !== area.code,
+                              )
+                            : [...application.practiceAreaCodes, area.code],
+                        })
+                      }
+                    >
+                      {area.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                disabled={busy || application.practiceAreaCodes.length === 0}
+              >
+                Submit for verification
+              </button>
+            </form>
+            {message ? <p className="notice">{message}</p> : null}
+            <p className="legal">
+              MFA becomes mandatory after submission. Verification and annual
+              expiry remain operations-controlled.
             </p>
             <button onClick={signOut}>Sign out</button>
           </div>
@@ -450,6 +936,27 @@ export default function Workspace() {
                 </b>
               </a>
               <a
+                className={tab === "matching" ? "active" : ""}
+                onClick={() => setTab("matching")}
+              >
+                Matching assistance{" "}
+                <b>
+                  {
+                    matchingRequests.filter((item) => item.state === "open")
+                      .length
+                  }
+                </b>
+              </a>
+              <a
+                className={tab === "safeguarding" ? "active" : ""}
+                onClick={() => setTab("safeguarding")}
+              >
+                Safeguarding{" "}
+                <b>
+                  {safeguarding.filter((item) => item.state === "open").length}
+                </b>
+              </a>
+              <a
                 className={tab === "privacy" ? "active" : ""}
                 onClick={() => setTab("privacy")}
               >
@@ -479,7 +986,7 @@ export default function Workspace() {
       <section className="content">
         <header>
           <div>
-            <p className="eyebrow">Controlled pilot</p>
+            <p className="eyebrow">Nationwide legal-access operations</p>
             <h1>{label(tab)}</h1>
           </div>
           <div>
@@ -519,7 +1026,8 @@ export default function Workspace() {
                   <span>
                     <strong>{item.reference}</strong>
                     <small>
-                      {item.state_code === "LA" ? "Lagos" : item.state_code} ·{" "}
+                      {item.state_code} ·{" "}
+                      {label(item.practice_area_code ?? "legal matter")} ·{" "}
                       {label(item.urgency)}
                     </small>
                   </span>
@@ -586,6 +1094,161 @@ export default function Workspace() {
             ))}
           </Panel>
         ) : null}
+        {tab === "matching" ? (
+          <Panel title="Operations-assisted lawyer matching">
+            {matchingRequests.length === 0 ? (
+              <Empty text="No matching assistance requests." />
+            ) : (
+              matchingRequests.map((item) => (
+                <div className="row" key={item.id}>
+                  <span>
+                    <strong>{label(item.practice_area_code)}</strong>
+                    <small>
+                      {item.state_code} · {label(item.urgency)} ·{" "}
+                      {item.matter_id}
+                    </small>
+                  </span>
+                  <span className="pill">{label(item.state)}</span>
+                </div>
+              ))
+            )}
+            {matchingRequests
+              .filter((item) => item.state === "open")
+              .map((item) => (
+                <div className="row" key={`assign-${item.id}`}>
+                  <span>
+                    <strong>Assign an eligible verified lawyer</strong>
+                    <small>
+                      Operations records the assignment; conflict review still
+                      occurs before payment.
+                    </small>
+                  </span>
+                  <select
+                    aria-label="Assign eligible lawyer"
+                    defaultValue=""
+                    onChange={(event) =>
+                      void assignMatching(item, event.target.value)
+                    }
+                  >
+                    <option value="" disabled>
+                      Select lawyer
+                    </option>
+                    {lawyers
+                      .filter(
+                        (lawyer) =>
+                          lawyer.verification_status === "verified" &&
+                          lawyer.available === 1,
+                      )
+                      .map((lawyer) => (
+                        <option key={lawyer.id} value={lawyer.id}>
+                          {lawyer.display_name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ))}
+          </Panel>
+        ) : null}
+        {tab === "safeguarding" ? (
+          <Panel title="Restricted safeguarding review">
+            {safeguarding.length === 0 ? (
+              <Empty text="No safeguarding reviews." />
+            ) : (
+              safeguarding.map((item) => (
+                <div className="row" key={item.id}>
+                  <span>
+                    <strong>{label(item.reason_code)}</strong>
+                    <small>
+                      {item.matter_id ??
+                        item.minor_profile_id ??
+                        "restricted subject"}
+                    </small>
+                  </span>
+                  <span className="pill urgent">{label(item.state)}</span>
+                </div>
+              ))
+            )}
+            {safeguarding
+              .filter((item) => item.state === "open")
+              .map((item) => (
+                <div className="row" key={`resolve-${item.id}`}>
+                  <span>
+                    <strong>Restricted human decision</strong>
+                    <small>
+                      Record a least-disclosure safeguarding outcome.
+                    </small>
+                  </span>
+                  <button
+                    onClick={() =>
+                      resolveSafeguarding(item, "restricted_continue")
+                    }
+                  >
+                    Restricted continue
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      resolveSafeguarding(item, "guardian_required")
+                    }
+                  >
+                    Require guardian
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => resolveSafeguarding(item, "closed")}
+                  >
+                    Close
+                  </button>
+                </div>
+              ))}
+            <h3>Organization authority reviews</h3>
+            {authorityReviews
+              .filter((item) => item.decision === "pending")
+              .map((item) => (
+                <div className="row" key={item.id}>
+                  <span>
+                    <strong>{item.legal_name}</strong>
+                    <small>{item.registration_number}</small>
+                  </span>
+                  <button onClick={() => decideAuthority(item, "approved")}>
+                    Approve authority
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => decideAuthority(item, "declined")}
+                  >
+                    Decline
+                  </button>
+                </div>
+              ))}
+            <h3>Guardian-link reviews</h3>
+            {guardianReviews
+              .filter((item) => item.status === "pending")
+              .map((item) => (
+                <div className="row" key={item.id}>
+                  <span>
+                    <strong>{label(item.relationship)}</strong>
+                    <small>{item.minor_profile_id}</small>
+                  </span>
+                  <button onClick={() => decideGuardian(item, "verified")}>
+                    Verify guardian
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => decideGuardian(item, "safeguarding_review")}
+                  >
+                    Safeguarding
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => decideGuardian(item, "declined")}
+                  >
+                    Decline
+                  </button>
+                </div>
+              ))}
+          </Panel>
+        ) : null}
         {tab === "privacy" ? (
           <Panel title="Human-review requests">
             {privacy.map((item) => (
@@ -648,7 +1311,9 @@ export default function Workspace() {
             </div>
           ) : null}
           {session.user.role === "lawyer" &&
-          ["active", "lawyer_review"].includes(selected.state) ? (
+          ["consultation_active", "awaiting_client", "lawyer_review"].includes(
+            selected.state,
+          ) ? (
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -704,6 +1369,141 @@ export default function Workspace() {
                 />
               </label>
               <button disabled={busy}>Attest and deliver</button>
+            </form>
+          ) : null}
+          {session.user.role === "lawyer" &&
+          selected.state === "consultation_scheduled" ? (
+            <div>
+              {!selected.consultation ? (
+                <button onClick={scheduleConsultation}>
+                  Schedule one-hour live text consultation
+                </button>
+              ) : (
+                <button onClick={joinConsultation}>
+                  {liveConnected
+                    ? "Consultation connected"
+                    : "Join live consultation"}
+                </button>
+              )}
+              {liveConnected ? (
+                <div>
+                  <textarea
+                    value={liveBody}
+                    onChange={(event) => setLiveBody(event.target.value)}
+                    placeholder="Private live consultation message"
+                  />
+                  <button onClick={sendLiveMessage}>Send live message</button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {session.user.role === "lawyer" && selected.state === "delivered" ? (
+            <form onSubmit={offerRepresentation}>
+              <h3>Optional representation proposal</h3>
+              <p className="legal">
+                This is a separate engagement. Lex does not calculate court
+                deadlines, hold client money, appear in court, or guarantee an
+                outcome.
+              </p>
+              <label>
+                Scope
+                <textarea
+                  minLength={20}
+                  required
+                  value={proposal.scope}
+                  onChange={(event) =>
+                    setProposal({ ...proposal, scope: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Exclusions
+                <textarea
+                  minLength={5}
+                  required
+                  value={proposal.exclusions}
+                  onChange={(event) =>
+                    setProposal({ ...proposal, exclusions: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Fee summary
+                <textarea
+                  minLength={5}
+                  required
+                  value={proposal.feeSummary}
+                  onChange={(event) =>
+                    setProposal({ ...proposal, feeSummary: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Expected expenses
+                <textarea
+                  value={proposal.expectedExpenses}
+                  onChange={(event) =>
+                    setProposal({
+                      ...proposal,
+                      expectedExpenses: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Cancellation terms
+                <textarea
+                  minLength={10}
+                  required
+                  value={proposal.cancellationTerms}
+                  onChange={(event) =>
+                    setProposal({
+                      ...proposal,
+                      cancellationTerms: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Client responsibilities
+                <textarea
+                  minLength={10}
+                  required
+                  value={proposal.clientResponsibilities}
+                  onChange={(event) =>
+                    setProposal({
+                      ...proposal,
+                      clientResponsibilities: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                First milestone
+                <input
+                  value={proposal.milestoneTitle}
+                  onChange={(event) =>
+                    setProposal({
+                      ...proposal,
+                      milestoneTitle: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Milestone amount (NGN)
+                <input
+                  inputMode="decimal"
+                  value={proposal.milestoneAmount}
+                  onChange={(event) =>
+                    setProposal({
+                      ...proposal,
+                      milestoneAmount: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <button disabled={busy}>Attest and offer proposal</button>
             </form>
           ) : null}
         </div>

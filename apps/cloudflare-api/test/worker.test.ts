@@ -7,6 +7,8 @@ declare module "cloudflare:test" {
   }
 }
 
+let clientAccessToken = "";
+
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   await env.DB.prepare(
@@ -56,6 +58,7 @@ describe("Lex Worker", () => {
     });
     expect(verified.status).toBe(200);
     const session = await verified.json<{ accessToken: string }>();
+    clientAccessToken = session.accessToken;
     const replay = await SELF.fetch("https://lex.test/v1/auth/otp/verify", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -70,7 +73,11 @@ describe("Lex Worker", () => {
     });
     expect(capabilities.status).toBe(200);
     await expect(capabilities.json()).resolves.toMatchObject({
-      pilot: { country: "NG", activeState: "LA", languages: ["en", "pcm"] },
+      release: {
+        country: "NG",
+        practiceAreaCount: 52,
+        languages: ["en", "pcm", "ha", "yo", "ig"],
+      },
     });
   });
 
@@ -95,24 +102,74 @@ describe("Lex Worker", () => {
     });
   });
 
-  it("keeps non-Lagos submission in intake-only state", async () => {
-    const user = await env.DB.prepare(
-      "SELECT id FROM users WHERE role='client' LIMIT 1",
-    ).first<{ id: string }>();
-    expect(user?.id).toBeTruthy();
-    const now = new Date().toISOString();
-    const workflowId = "workflow-ng-la-tenant-v1";
-    const intakeId = crypto.randomUUID();
-    await env.DB.prepare(
-      "INSERT INTO intakes (id,client_user_id,language,tenancy_role,country_code,state_code,source_channel,workflow_id,state,structured_summary_json,confirmed_at,version,created_at,updated_at) VALUES (?,?,'en','tenant','NG','OG','mobile',?,'awaiting_confirmation','{\"summary\":\"confirmed synthetic facts\"}',?,1,?,?)",
-    )
-      .bind(intakeId, user!.id, workflowId, now, now, now)
-      .run();
-    const status = await env.DB.prepare(
-      "SELECT CASE WHEN state_code='LA' THEN 'matching' ELSE 'intake_only' END target FROM intakes WHERE id=?",
-    )
-      .bind(intakeId)
-      .first<{ target: string }>();
-    expect(status?.target).toBe("intake_only");
+  it("exposes a searchable 52-area catalogue and creates nationwide general intake", async () => {
+    const catalogue = await SELF.fetch(
+      "https://lex.test/v1/catalog/practice-areas?q=police",
+    );
+    expect(catalogue.status).toBe(200);
+    await expect(catalogue.json()).resolves.toMatchObject({
+      countryCode: "NG",
+      stagingAvailability: "nationwide",
+      count: 1,
+    });
+    const created = await SELF.fetch("https://lex.test/v1/intakes", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${clientAccessToken}`,
+      },
+      body: JSON.stringify({
+        language: "ha",
+        clientType: "adult_individual",
+        practiceAreaCode: "police-detention-bail",
+        countryCode: "NG",
+        stateCode: "OG",
+        sourceChannel: "mobile",
+      }),
+    });
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toMatchObject({
+      state: "draft",
+      jurisdictionStatus: "active",
+      service: { practiceAreaCode: "police-detention-bail" },
+    });
+  });
+
+  it("blocks detailed minor intake until a verified guardian exists", async () => {
+    const created = await SELF.fetch("https://lex.test/v1/intakes", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${clientAccessToken}`,
+      },
+      body: JSON.stringify({
+        language: "en",
+        clientType: "minor",
+        practiceAreaCode: "custody-child-support",
+        countryCode: "NG",
+        stateCode: "LA",
+        sourceChannel: "mobile",
+      }),
+    });
+    const intake = await created.json<{ id: string }>();
+    const update = await SELF.fetch(
+      `https://lex.test/v1/intakes/${intake.id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${clientAccessToken}`,
+        },
+        body: JSON.stringify({
+          narrative: "Detailed protected facts must not be stored yet",
+          answers: [],
+          version: 1,
+        }),
+      },
+    );
+    expect(update.status).toBe(403);
+    await expect(update.json()).resolves.toMatchObject({
+      message: "A verified client subject is required",
+    });
   });
 });
