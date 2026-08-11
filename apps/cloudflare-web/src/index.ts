@@ -14,7 +14,7 @@ export default {
     );
     headers.set(
       "content-security-policy",
-      "default-src 'self'; connect-src 'self' https://*.workers.dev; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "default-src 'self'; connect-src 'self' https://*.workers.dev; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     );
     if (new URL(request.url).pathname.startsWith("/_next/static/"))
       headers.set("cache-control", "public, max-age=31536000, immutable");

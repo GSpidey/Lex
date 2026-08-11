@@ -134,6 +134,37 @@ type AiRun = {
   latency_ms?: number;
   created_at: string;
 };
+type AuthCountry = {
+  iso: string;
+  name: string;
+  dialCode: string;
+  placeholder: string;
+};
+
+const AUTH_COUNTRIES: AuthCountry[] = [
+  { iso: "NG", name: "Nigeria", dialCode: "+234", placeholder: "801 234 5678" },
+  { iso: "CA", name: "Canada", dialCode: "+1", placeholder: "437 255 1796" },
+  {
+    iso: "GB",
+    name: "United Kingdom",
+    dialCode: "+44",
+    placeholder: "7510 346561",
+  },
+  {
+    iso: "US",
+    name: "United States",
+    dialCode: "+1",
+    placeholder: "212 555 0100",
+  },
+  { iso: "GH", name: "Ghana", dialCode: "+233", placeholder: "24 123 4567" },
+  { iso: "KE", name: "Kenya", dialCode: "+254", placeholder: "712 345678" },
+  {
+    iso: "ZA",
+    name: "South Africa",
+    dialCode: "+27",
+    placeholder: "82 123 4567",
+  },
+];
 
 const label = (value: string) =>
   value
@@ -142,7 +173,8 @@ const label = (value: string) =>
 
 export default function Workspace() {
   const [session, setSession] = useState<Session | null>(null);
-  const [phone, setPhone] = useState("+234");
+  const [authCountryIso, setAuthCountryIso] = useState("NG");
+  const [nationalNumber, setNationalNumber] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [code, setCode] = useState("");
   const [preAuth, setPreAuth] = useState("");
@@ -218,6 +250,13 @@ export default function Workspace() {
   const [liveBody, setLiveBody] = useState("");
   const [liveSocket, setLiveSocket] = useState<WebSocket | null>(null);
   const [busy, setBusy] = useState(false);
+  const authCountry =
+    AUTH_COUNTRIES.find((country) => country.iso === authCountryIso) ??
+    AUTH_COUNTRIES[0]!;
+  const normalizedNationalNumber = nationalNumber
+    .replace(/\D/gu, "")
+    .replace(/^0/u, "");
+  const phone = `${authCountry.dialCode}${normalizedNationalNumber}`;
   const [message, setMessage] = useState("");
   useEffect(() => {
     setSession(readSession());
@@ -830,14 +869,39 @@ export default function Workspace() {
               <form onSubmit={requestOtp}>
                 <label>
                   WhatsApp phone number
-                  <input
-                    value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                    placeholder="+234..."
-                    required
-                  />
+                  <div className="phone-field">
+                    <select
+                      aria-label="Phone country"
+                      value={authCountryIso}
+                      onChange={(event) =>
+                        setAuthCountryIso(event.target.value)
+                      }
+                    >
+                      {AUTH_COUNTRIES.map((country) => (
+                        <option key={country.iso} value={country.iso}>
+                          {country.name} ({country.dialCode})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="national-number">
+                      <span>{authCountry.dialCode}</span>
+                      <input
+                        value={nationalNumber}
+                        onChange={(event) =>
+                          setNationalNumber(event.target.value)
+                        }
+                        inputMode="tel"
+                        autoComplete="tel-national"
+                        placeholder={authCountry.placeholder}
+                        aria-label="National phone number"
+                        required
+                      />
+                    </div>
+                  </div>
                 </label>
-                <button disabled={busy}>Send secure code</button>
+                <button disabled={busy || normalizedNationalNumber.length < 7}>
+                  Send secure code
+                </button>
               </form>
             ) : null}
             {challengeId && !preAuth ? (

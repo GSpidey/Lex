@@ -19,7 +19,8 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 .auth-shell {
@@ -131,7 +132,8 @@ label {
   font-size: 13px;
   font-weight: 700;
 }
-input {
+input,
+select {
   padding: 14px 15px;
   border-radius: 10px;
   border: 1px solid #cbd0ca;
@@ -139,9 +141,51 @@ input {
   font-size: 16px;
   outline: none;
 }
-input:focus {
+input:focus,
+select:focus {
   border-color: var(--green);
   box-shadow: 0 0 0 3px #1e624818;
+}
+.phone-field {
+  display: grid;
+  gap: 10px;
+}
+.phone-field select {
+  width: 100%;
+  color: var(--ink);
+}
+.national-number {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  border: 1px solid #cbd0ca;
+  border-radius: 10px;
+  background: white;
+  overflow: hidden;
+}
+.national-number:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px #1e624818;
+}
+.national-number span {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 0 13px;
+  background: #edf2ed;
+  border-right: 1px solid #cbd0ca;
+  color: var(--forest);
+  font-weight: 800;
+}
+.national-number input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.national-number input:focus {
+  box-shadow: none;
 }
 button {
   border: 0;
