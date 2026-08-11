@@ -57,13 +57,32 @@ auth.post(
     }
     const destination =
       input.channel === "whatsapp" ? input.phone! : input.email!;
-    const stagingTestLogin =
+    const destinationHash = await hmac(
+      destination.toLowerCase(),
+      context.env.AUTH_HMAC_PEPPER,
+    );
+    const user = await context.env.DB.prepare(
+      `SELECT u.id,u.role,
+              CASE WHEN f.user_id IS NULL THEN 0 ELSE 1 END founder_authorized
+         FROM users u
+         LEFT JOIN founder_bootstrap_events f ON f.user_id=u.id
+        WHERE ${input.channel === "whatsapp" ? "u.phone_hash" : "u.email_hash"}=?
+        LIMIT 1`,
+    )
+      .bind(destinationHash)
+      .first<{ id: string; role: string; founder_authorized: number }>();
+    const stagingTestCodeAvailable =
       context.env.APP_ENV === "staging" &&
       context.env.STAGING_TEST_LOGIN_ENABLED === "true" &&
       input.channel === "whatsapp" &&
       input.purpose === "sign_in" &&
-      destination === context.env.STAGING_TEST_PHONE_E164 &&
       /^\d{6}$/u.test(context.env.STAGING_TEST_OTP_CODE ?? "");
+    const founderStagingLogin =
+      stagingTestCodeAvailable && user?.founder_authorized === 1;
+    const stagingTestLogin =
+      stagingTestCodeAvailable &&
+      (destination === context.env.STAGING_TEST_PHONE_E164 ||
+        founderStagingLogin);
     if (
       input.channel === "whatsapp" &&
       !stagingTestLogin &&
@@ -79,10 +98,6 @@ auth.post(
         503,
       );
     }
-    const destinationHash = await hmac(
-      destination.toLowerCase(),
-      context.env.AUTH_HMAC_PEPPER,
-    );
     const ip = context.req.header("cf-connecting-ip") ?? "local";
     const ipHash = await hmac(ip, context.env.AUTH_HMAC_PEPPER);
     const deviceHash = await hmac(
@@ -126,12 +141,12 @@ auth.post(
       context.env.FIELD_ENCRYPTION_KEY,
     );
     const codeHash = await hmac(`${id}:${code}`, context.env.AUTH_HMAC_PEPPER);
-    const user = await context.env.DB.prepare(
-      `SELECT id,role FROM users WHERE ${input.channel === "whatsapp" ? "phone_hash" : "email_hash"} = ?`,
+    if (
+      stagingTestLogin &&
+      user &&
+      !founderStagingLogin &&
+      canonicalRole(user.role) !== "client"
     )
-      .bind(destinationHash)
-      .first<{ id: string; role: string }>();
-    if (stagingTestLogin && user && user.role !== "client")
       return context.json(
         { message: "The staging test identity is restricted to clients" },
         403,
@@ -167,6 +182,7 @@ auth.post(
           channel: input.channel,
           purpose: input.purpose,
           stagingTestLogin,
+          founderStagingLogin,
         }),
         context.get("requestId"),
         createdAt,
@@ -237,12 +253,22 @@ auth.post(
     const userId = challenge.userId ?? crypto.randomUUID();
     const existingAccount = challenge.userId
       ? await context.env.DB.prepare(
-          "SELECT role,mfa_enabled FROM users WHERE id=? AND status='active'",
+          `SELECT u.role,u.mfa_enabled,u.default_mobile_role,
+                  EXISTS(
+                    SELECT 1 FROM user_role_assignments r
+                     WHERE r.user_id=u.id AND r.role='client' AND r.status='active'
+                  ) has_client_role
+             FROM users u WHERE u.id=? AND u.status='active'`,
         )
           .bind(challenge.userId)
-          .first<{ role: string; mfa_enabled: number }>()
+          .first<{
+            role: string;
+            mfa_enabled: number;
+            default_mobile_role: string | null;
+            has_client_role: number;
+          }>()
       : null;
-    if (existingAccount && existingAccount.role !== "client") {
+    if (existingAccount && existingAccount.has_client_role !== 1) {
       const preAuthToken = randomToken(32);
       const timestamp = now();
       const purpose = existingAccount.mfa_enabled ? "mfa_verify" : "mfa_setup";
@@ -344,6 +370,11 @@ auth.post(
       );
     }
     void destination;
+    const assignedRoles = await rolesForUser(
+      context.env,
+      userId,
+      existingAccount?.role ?? "client",
+    );
     return context.json({
       accessToken,
       refreshToken,
@@ -352,7 +383,7 @@ auth.post(
         id: userId,
         role: "client",
         activeRole: "client",
-        roles: ["client"],
+        roles: assignedRoles,
       },
     });
   },

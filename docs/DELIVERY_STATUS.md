@@ -4,7 +4,7 @@
 
 - Implemented and deployed: additive multi-role schema and legacy backfill, rotating active-role sessions, protected founder bootstrap, professional application/evidence workflows, two-owner approval records, Legal Centre versioning, Ask Lex conversations and AI queue work, Owner provider/AI diagnostics, progressive mobile accordions, grouped catalogue, responsive web role switching, and iOS/TestFlight guards.
 - OpenAI: a real synthetic guided-intake run completed through the deployed Queue consumer using `gpt-5.6-terra`; model, prompt/schema versions, latency and token use are recorded. Transcription remains independently unverified.
-- Founder records: both authorized staging accounts are bootstrapped with the requested assigned roles and preverified contact timestamps. Their contact details are encrypted/hashed and are not committed. The one-time bootstrap credential was removed after use; MFA enrollment is still required at first privileged sign-in.
+- Founder records: both authorized staging accounts are bootstrapped with the requested assigned roles and preverified contact timestamps. Founder-authorized numbers can use the controlled staging OTP while Meta is unavailable; the primary founder's real-number smoke entered Client with assigned Client/Owner roles. Contact details remain encrypted/hashed and uncommitted. MFA enrollment is still required before privileged access.
 - Legal text: the controlled drafting pack is in `docs/LEGAL_CENTRE_DRAFTS.md`; production remains blocked pending company details and lawyer-co-founder review.
 - iOS: source and validation are prepared; no TestFlight upload or App Store record action is authorized.
 
@@ -34,7 +34,7 @@ Statuses: `not_started`, `implemented_unverified`, `local_verified`, `provider_v
 | Email and push                                    | implemented_unverified | Postmark and Expo delivery adapters are capability-gated; credentials and provider tests pending                           |
 | Mobile client                                     | provider_verified      | Gradle APK 0.3.0 is staging-connected, installed, cold-launched and visually inspected on Android device `R3CW70E87KD`     |
 | Lawyer/operations web workspace                   | local_verified         | General applications, matter work, consultation, representation, matching, safeguarding and authority controls type-check  |
-| Cloudflare staging deployment                     | provider_verified      | API `36a688c4`, jobs `b9091ce7`, web `f3ae508e`; API/D1 and web remote health checks pass                                  |
+| Cloudflare staging deployment                     | provider_verified      | API `f8eefa71`, jobs `b9091ce7`, web `f3ae508e`; API/D1 and web remote health checks pass                                  |
 | Legal/native-language approvals                   | not_started            | Test content is synthetic; recorded lawyer-co-founder and native-language/privacy approval required                        |
 
 No row may become `provider_verified`, `legal_approved`, or `pilot_ready` without saved evidence for that exact gate.

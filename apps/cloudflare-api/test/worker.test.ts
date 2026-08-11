@@ -1,5 +1,6 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
+import { hmac } from "../src/crypto.js";
 
 declare module "cloudflare:test" {
   interface ProvidedEnv extends Env {
@@ -99,6 +100,77 @@ describe("Lex Worker", () => {
     await expect(response.json()).resolves.toMatchObject({
       capability: "whatsapp_otp",
       status: "unconfigured",
+    });
+  });
+
+  it("allows an authorized founder to enter the mobile Client role with the staging OTP", async () => {
+    const userId = "synthetic-founder-client-owner";
+    const phone = "+14165550199";
+    const timestamp = "2026-08-11T00:00:00.000Z";
+    const phoneHash = await hmac(
+      phone,
+      "local-test-hmac-pepper-at-least-32-characters",
+    );
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO users
+         (id,role,status,display_name,default_mobile_role,default_web_role,phone_hash,phone_verified_at,preferred_language,mfa_enabled,version,created_at,updated_at)
+         VALUES (?,'super_admin','active','Synthetic founder','client','owner',?,?,'en',0,1,?,?)`,
+      ).bind(userId, phoneHash, timestamp, timestamp, timestamp),
+      env.DB.prepare(
+        `INSERT INTO user_role_assignments
+         (id,user_id,role,status,assignment_source,assigned_at)
+         VALUES ('synthetic-founder-client-role',?,'client','active','test_fixture',?)`,
+      ).bind(userId, timestamp),
+      env.DB.prepare(
+        `INSERT INTO user_role_assignments
+         (id,user_id,role,status,assignment_source,assigned_at)
+         VALUES ('synthetic-founder-owner-role',?,'owner','active','test_fixture',?)`,
+      ).bind(userId, timestamp),
+      env.DB.prepare(
+        `INSERT INTO founder_bootstrap_events
+         (id,user_id,contact_fingerprint,assigned_roles_json,verification_source,occurred_at)
+         VALUES ('synthetic-founder-event',?,'synthetic-founder-fingerprint','["client","owner"]','test_fixture',?)`,
+      ).bind(userId, timestamp),
+    ]);
+
+    const requested = await SELF.fetch("https://lex.test/v1/auth/otp/request", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-device-id": "founder-mobile-test",
+      },
+      body: JSON.stringify({
+        channel: "whatsapp",
+        phone,
+        purpose: "sign_in",
+        locale: "en",
+      }),
+    });
+    expect(requested.status).toBe(201);
+    const challenge = await requested.json<{
+      challengeId: string;
+      stagingTestLogin: boolean;
+    }>();
+    expect(challenge.stagingTestLogin).toBe(true);
+
+    const verified = await SELF.fetch("https://lex.test/v1/auth/otp/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        challengeId: challenge.challengeId,
+        code: "246810",
+        deviceName: "android Lex app",
+      }),
+    });
+    expect(verified.status).toBe(200);
+    await expect(verified.json()).resolves.toMatchObject({
+      user: {
+        id: userId,
+        role: "client",
+        activeRole: "client",
+        roles: ["client", "owner"],
+      },
     });
   });
 
