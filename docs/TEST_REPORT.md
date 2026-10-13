@@ -12,7 +12,18 @@ Remote changes are deployed in order: additive migration 0005 using a scoped mig
 
 Still outstanding: Node/PostgreSQL Docker parity and migration rehearsal, malware scanning/backups/restore drills, actual provider/payment/email/push tests, lawyer/native-language approval, final company contact/retention/commercial schedules, signed store artifacts and physical-device acceptance. No email, legal approval, Apple conversion or store upload is represented as completed.
 
-Deployment and native-resource results are recorded below after execution.
+Completed deployment and verification:
+
+- Commit `8b823f9` pushed to the existing full-spectrum branch and draft PR. No unrelated repository or Cloudflare resource was changed.
+- All 17 API integration tests pass (9 existing journeys, 8 legal/security tests). API, jobs, mobile and web TypeScript checks pass; static web production build and endpoint scan pass. Test fixtures are synthetic, not a real partner signature.
+- D1 migrations 0005 and 0006 applied in the two-step order above, with no pending migrations. Remote checks find 20 documents, 20 hashed version-2 drafts, one owner-only document, zero recorded approvals. Existing users/matters were not migrated or replaced.
+- Deployed API version `b1acf1ae-6911-4c81-a8b8-3182e733d881`, jobs `5303938e-b567-4cb3-bb0e-3d0c76f2fa61`, web `1da6d604-abe3-4e04-9fab-fe266b2f2e90`. Cloudflare reported startup times of 53 ms, 2 ms and 2 ms respectively. These are startup measurements, not per-request CPU or complete load-testing evidence.
+- Final web revision `acbf92a4-cd71-4479-8e6f-b5635027be60` preserves a reviewer's unsent comment when renewing MFA. Its rebuilt static export/typecheck passed and Cloudflare reported 3 ms startup.
+- Live same-origin health is healthy/staging. Public policies return no unpublished drafts; anonymous private-review access returns 401. The deployed public Legal Centre and authenticated-review entry render correctly in the internal browser. Authenticated real-owner signing was not performed or bypassed.
+- Expo public configuration validates. Android `:app:processReleaseResources` passes, including the approved adaptive icon resources and JS/assets bundle. The first offline attempt needed an uncached Gradle plugin; the normal online retry succeeded. No new APK/AAB was assembled, signed, installed or submitted. No iOS build/upload occurred.
+- The Postmark secret-name check confirms no server token on the jobs Worker. Review invitation email was not sent. The recipient-bound private invitation-link alternative is locally tested and deployed; sending it manually remains an owner action.
+
+Browser paths: `/legal/`, `/legal/review/`, `/support/`, `/account-deletion/`. Public-support and privacy contacts still need verified values before these URLs are ready for store submission.
 
 Date: 2026-08-11
 Scope: `C:\Users\ahmed\Applications\Lex` only; synthetic data only.

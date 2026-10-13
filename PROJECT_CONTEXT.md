@@ -1,5 +1,9 @@
 # Project Context
 
+## Latest implementation handoff 2026-10-13
+
+The approved conversation/scales icon and legal-review increment are committed and deployed to the existing isolated Cloudflare staging. See docs/TEST_REPORT.md for exact versions, checks and limitations. The Legal Centre has 20 substantive unapproved drafts, recipient-bound private review invitations, MFA-protected approval, and distinct-owner publication. No partner email or approval occurred; Postmark is not configured. The existing Docker/NestJS files are not the current Hono application's replacement. Next implementation work is the repository/Node/PostgreSQL/storage/queue port and migration/restore parity, while Cloudflare remains authoritative. Do not claim the complete production preparation plan or store readiness is finished.
+
 ## Current implementation focus (2026-10-13)
 
 The approved continuation is production preparation: substantive legal documents and paperless partner review, Nigerian operator Golden Epic Limited plus Canadian technology provider GoldenEpic Solutions Inc., and current Hono feature parity on an isolated Docker stack. Preserve existing Cloudflare staging while the Docker migration is verified. The owner selected icon concept 2 (conversation and scales). Apple enrollment is currently Individual; prepare organization conversion but do not submit an account-wide change. Full plan and outstanding evidence remain in the existing MVP plan and delivery matrix.

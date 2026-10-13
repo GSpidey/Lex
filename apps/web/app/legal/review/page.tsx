@@ -93,7 +93,7 @@ export default function ReviewPage() {
       ),
     );
   }
-  async function open(id: string) {
+  async function open(id: string, preserveDraft = false) {
     setDetail(
       await api<Detail>(
         `/owner/legal-reviews/${encodeURIComponent(id)}`,
@@ -102,8 +102,10 @@ export default function ReviewPage() {
       ),
     );
     setRequestId(id);
-    setComment("");
-    setIntent(false);
+    if (!preserveDraft) {
+      setComment("");
+      setIntent(false);
+    }
     setQueued(false);
     setShareLink("");
   }
@@ -116,7 +118,7 @@ export default function ReviewPage() {
     setMfa("");
     await load();
     setReady(true);
-    if (requestId) await open(requestId);
+    if (requestId) await open(requestId, true);
   }
   async function decide(
     kind: "comment" | "approved" | "changes_requested" | "revoked",
