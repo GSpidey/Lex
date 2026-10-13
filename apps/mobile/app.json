@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Lex",
+    "icon": "../../assets/branding/lex-conversation-scales.png",
     "slug": "lex-nigeria",
     "version": "0.3.0",
     "orientation": "portrait",
@@ -22,7 +23,7 @@
       "package": "com.lexnigeria.test",
       "versionCode": 3,
       "permissions": ["RECORD_AUDIO", "CAMERA"],
-      "adaptiveIcon": { "backgroundColor": "#123c2d" }
+      "adaptiveIcon": { "backgroundColor": "#003b25", "foregroundImage": "../../assets/branding/lex-conversation-scales.png" }
     },
     "plugins": [
       "expo-router",

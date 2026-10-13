@@ -4,7 +4,6 @@ import {
   aiIntakeMessageSchema,
   cookiePreferenceSchema,
   createAiIntakeSessionSchema,
-  legalAcceptanceSchema,
   professionalApplicationReviewSchema,
   professionalApplicationSchema,
 } from "@lex/contracts";
@@ -215,81 +214,7 @@ routes.use("/professional-applications/*", requireAuth);
 routes.use("/ai/*", requireAuth);
 routes.use("/owner/*", requireAuth);
 
-routes.get("/legal/documents", async (context) => {
-  const user = context.get("user");
-  const visibility =
-    context.env.APP_ENV === "production" &&
-    user.role !== "owner" &&
-    user.role !== "operations"
-      ? "AND v.status='published'"
-      : "";
-  const result = await context.env.DB.prepare(
-    `SELECT d.id,d.code,d.title,d.audience,d.required_at,d.optional,
-            v.id version_id,v.version,v.language,v.status,v.content_markdown,
-            v.company_placeholder_present,v.effective_at
-       FROM legal_documents d
-       JOIN legal_document_versions v ON v.document_id=d.id
-      WHERE v.language=? ${visibility}
-        AND v.version=(SELECT MAX(v2.version) FROM legal_document_versions v2 WHERE v2.document_id=d.id AND v2.language=v.language)
-      ORDER BY d.title`,
-  )
-    .bind(context.req.query("language") ?? "en")
-    .all();
-  return context.json({
-    items: result.results,
-    stagingDraftsVisible: context.env.APP_ENV !== "production",
-  });
-});
-
-routes.post(
-  "/legal/acceptances",
-  zValidator("json", legalAcceptanceSchema),
-  async (context) => {
-    const user = context.get("user");
-    const input = context.req.valid("json");
-    const version = await context.env.DB.prepare(
-      "SELECT id FROM legal_document_versions WHERE id=?",
-    )
-      .bind(input.documentVersionId)
-      .first();
-    if (!version)
-      return context.json({ message: "Legal document version not found" }, 404);
-    const timestamp = now();
-    await context.env.DB.prepare(
-      `INSERT INTO legal_acceptances
-       (id,user_id,document_version_id,accepted,channel,language,device_hash,source_ip_hash,accepted_at)
-       VALUES (?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(user_id,document_version_id,channel) DO UPDATE SET accepted=1,language=excluded.language,device_hash=excluded.device_hash,source_ip_hash=excluded.source_ip_hash,accepted_at=excluded.accepted_at,withdrawn_at=NULL`,
-    )
-      .bind(
-        crypto.randomUUID(),
-        user.id,
-        input.documentVersionId,
-        1,
-        input.channel,
-        input.language,
-        await hmac(
-          context.req.header("x-device-id") ?? "unknown",
-          context.env.AUTH_HMAC_PEPPER,
-        ),
-        await hmac(
-          context.req.header("cf-connecting-ip") ?? "local",
-          context.env.AUTH_HMAC_PEPPER,
-        ),
-        timestamp,
-      )
-      .run();
-    await audit(context.env, {
-      actorUserId: user.id,
-      action: "legal.document_accepted",
-      entityType: "LegalDocumentVersion",
-      entityId: input.documentVersionId,
-      requestId: context.get("requestId"),
-      metadata: { channel: input.channel, language: input.language },
-    });
-    return context.json({ acceptedAt: timestamp }, 201);
-  },
-);
+// Legal publication, acceptance and review live in legal-routes.ts.
 
 routes.put(
   "/cookie-preferences",

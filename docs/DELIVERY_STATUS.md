@@ -1,5 +1,9 @@
 # Nationwide Test-Release Delivery Status
 
+## 2026-10-13 production preparation (in progress)
+
+The approved update is recorded in the existing MVP plan. Earlier evidence below is historical, not current provider or production verification. Corporate roles and current registration details have been owner-confirmed. The owner selected icon 2, conversation/scales; Android/iOS/web/store-size exports are integrated in source. Twenty substantive documents and the version-bound, MFA-protected Owner review UI/API are implemented, with public policies separated from private drafts. Private invitation handoff works independently of email; Postmark remains unconfigured and no partner invitation has been sent. Store signing inputs are prepared, not supplied. Docker Engine responds locally, but the current Hono/PostgreSQL port, migration rehearsal and Docker deployment remain unfinished. See TEST_REPORT for actual checks and deployment evidence; this increment is not public-release approval.
+
 ## 2026-08-11 experience increment
 
 - Implemented and deployed: additive multi-role schema and legacy backfill, rotating active-role sessions, protected founder bootstrap, professional application/evidence workflows, two-owner approval records, Legal Centre versioning, Ask Lex conversations and AI queue work, Owner provider/AI diagnostics, progressive mobile accordions, grouped catalogue, responsive web role switching, and iOS/TestFlight guards.

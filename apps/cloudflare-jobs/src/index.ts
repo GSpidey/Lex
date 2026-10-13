@@ -117,6 +117,47 @@ async function dispatch(
   env: Env,
 ) {
   if (kind === "auth_otp") return sendOtp(payload, env);
+  if (kind === "legal_review_invitation") {
+    if (
+      env.EMAIL_DELIVERY_ENABLED !== "true" ||
+      !env.POSTMARK_SERVER_TOKEN ||
+      !env.POSTMARK_FROM_EMAIL
+    )
+      throw new Error("EmailNotConfigured");
+    const invitation = JSON.parse(
+      await decrypt(String(payload.encrypted), env.FIELD_ENCRYPTION_KEY),
+    ) as {
+      recipient: string;
+      packetId: string;
+      tokenHash: string;
+      link: string;
+    };
+    const packet = await env.DB.prepare(
+      "SELECT state,expires_at,claimed_at,token_hash FROM legal_review_packets WHERE id=?",
+    )
+      .bind(invitation.packetId)
+      .first<{
+        state: string;
+        expires_at: string;
+        claimed_at: string | null;
+        token_hash: string;
+      }>();
+    if (
+      !packet ||
+      packet.state !== "pending" ||
+      packet.claimed_at ||
+      packet.expires_at <= now() ||
+      packet.token_hash !== invitation.tokenHash
+    )
+      return;
+    await sendPostmark(
+      env,
+      await decrypt(invitation.recipient, env.FIELD_ENCRYPTION_KEY),
+      "Lex documents ready for your legal review",
+      `Please review the Lex legal documents at the secure link below. Sign in to your own Owner workspace and verify MFA. You can comment, request changes or expressly approve the exact versions. Opening this email or link does not approve anything.\n\n${invitation.link}\n\nThe invitation expires in seven days. Do not forward it. Corporate execution and public publication remain separate actions.`,
+    );
+    return;
+  }
   if (kind === "evidence_check")
     return checkEvidence(String(payload.evidenceId), env);
   if (kind === "transcription")
@@ -134,8 +175,6 @@ async function dispatch(
 }
 
 async function sendOtp(payload: Record<string, unknown>, env: Env) {
-  if (!env.META_ACCESS_TOKEN || !env.META_PHONE_NUMBER_ID)
-    throw new Error("MetaNotConfigured");
   const envelope = JSON.parse(
     await decrypt(String(payload.encrypted), env.FIELD_ENCRYPTION_KEY),
   ) as { channel: string; destination: string; code: string; locale: string };
@@ -151,6 +190,8 @@ async function sendOtp(payload: Record<string, unknown>, env: Env) {
     return;
   }
   if (envelope.channel !== "whatsapp") throw new Error("UnsupportedOtpChannel");
+  if (!env.META_ACCESS_TOKEN || !env.META_PHONE_NUMBER_ID)
+    throw new Error("MetaNotConfigured");
   const response = await fetch(
     `https://graph.facebook.com/${env.META_GRAPH_VERSION}/${env.META_PHONE_NUMBER_ID}/messages`,
     {
@@ -1683,6 +1724,9 @@ async function runMaintenance(env: Env) {
         : env.JOBS_QUEUE
     ).send({ jobId: job.id });
   await env.DB.batch([
+    env.DB.prepare(
+      "DELETE FROM auth_step_up_attempts WHERE window_start<?",
+    ).bind(Math.floor(Date.now() / 300_000) - 288),
     env.DB.prepare(
       "UPDATE sessions SET revoked_at=? WHERE revoked_at IS NULL AND refresh_expires_at<=?",
     ).bind(timestamp, timestamp),

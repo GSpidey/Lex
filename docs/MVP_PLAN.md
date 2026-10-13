@@ -1,4 +1,22 @@
-# Lex Nationwide Full-Spectrum Legal-Access Test Release
+# Lex Nationwide Legal Access — Production Preparation
+
+## Approved update — 2026-10-13
+
+This is the continuation of the existing full-spectrum plan, not a replacement product. Golden Epic Limited (Nigeria, RC 1538879) is the proposed platform contracting entity and merchant. GoldenEpic Solutions Inc. (Canada, corporation 1641963-1) provides technology and may publish the apps subject to store eligibility. Responsibilities require an intercompany agreement; no IP transfer or corporate parent/subsidiary relationship is assumed.
+
+The owner confirmed the supplied corporate records are current. The Canadian certificate date is 2024-10-24; the D&B screenshot's 2024-10-23 date must be reconciled. Sensitive source documents, identity details, bank data and credentials must not be committed.
+
+Delivery order:
+1. Replace generic policy seeds with substantive, versioned review drafts; implement public effective-policy access, append-only acceptance history, immutable review packets, recipient-bound invitations, MFA decisions and downloadable receipts.
+2. Port current Hono behavior into runtime-independent services and Node adapters for PostgreSQL, private S3-compatible storage, BullMQ and consultation WebSockets. Preserve Cloudflare staging until parity, migration and rollback are demonstrated.
+3. Run an isolated Lex Docker deployment with health checks, quarantine/malware scanning, secret injection and backup/restore tooling. Local production builds do not imply public availability or verified provider execution.
+4. Complete Paystack/Flutterwave, Meta, transactional email, OpenAI and push setup where credentials permit. Request only the missing provider input; no unrelated feature shutdown.
+5. Integrate owner-approved conversation/scales icon concept; prepare private Android signing/AAB and iOS release metadata. Prepare Apple Individual-to-organization conversion without submitting an account-wide change.
+6. Test cross-runtime authorization, migration integrity, provider failure/replay, policy publication/review, device journeys and restore. Commit and deploy verified scoped increments, recording incomplete work accurately.
+
+Email the partner's already-authorized private address only when a working authenticated review packet and sender exist. A link visit is not approval. Document changes invalidate the packet's approval for publication. Distinct-owner release approval remains required. Corporate, privacy, fee-sharing, store billing and translation review applies to the affected action, not unrelated working functionality.
+
+Domain purchase is owner-operated later; retain temporary Lex URLs. No public release, store upload, new server purchase, production payment or unrelated-resource mutation is authorized by this preparation.
 
 ## Product contract
 

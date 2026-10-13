@@ -694,6 +694,26 @@ auth.post(
       .first<{ mfa_secret_encrypted: string | null }>();
     if (!account?.mfa_secret_encrypted)
       return context.json({ message: "MFA has not been configured" }, 409);
+    const windowStart = Math.floor(Date.now() / 300_000);
+    const attempt = await context.env.DB.prepare(
+      `INSERT INTO auth_step_up_attempts (user_id,window_start,attempts) VALUES (?,?,1)
+       ON CONFLICT(user_id,window_start) DO UPDATE SET attempts=attempts+1 RETURNING attempts`,
+    )
+      .bind(user.id, windowStart)
+      .first<{ attempts: number }>();
+    if (!attempt || attempt.attempts > 5) {
+      context.header(
+        "Retry-After",
+        String(300 - (Math.floor(Date.now() / 1000) % 300)),
+      );
+      return context.json(
+        {
+          message:
+            "Too many MFA attempts. Wait up to five minutes before trying again.",
+        },
+        429,
+      );
+    }
     const { code } = context.req.valid("json");
     const secret = await decrypt(
       account.mfa_secret_encrypted,

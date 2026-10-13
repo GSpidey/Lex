@@ -1,6 +1,8 @@
 # Project Context
 
-## Current implementation focus (2026-08-11)
+## Current implementation focus (2026-10-13)
+
+The approved continuation is production preparation: substantive legal documents and paperless partner review, Nigerian operator Golden Epic Limited plus Canadian technology provider GoldenEpic Solutions Inc., and current Hono feature parity on an isolated Docker stack. Preserve existing Cloudflare staging while the Docker migration is verified. The owner selected icon concept 2 (conversation and scales). Apple enrollment is currently Individual; prepare organization conversion but do not submit an account-wide change. Full plan and outstanding evidence remain in the existing MVP plan and delivery matrix.
 
 The nationwide full-spectrum contract now includes assigned multi-role Owner, Operations and Lawyer workspaces; approval-controlled professional onboarding; progressive client intake; visible Ask Lex AI assistance; a versioned Legal Centre; guided WhatsApp architecture; and iOS/TestFlight readiness without upload. Administration remains a separate responsive web workspace. Role switching is limited to server-assigned roles and public registration remains Client-only.
 

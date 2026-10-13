@@ -3,6 +3,20 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+def storeRelease = System.getenv('LEX_ANDROID_RELEASE_MODE') == 'store'
+def storeTask = gradle.startParameter.taskNames.any { it.toLowerCase().contains('bundlerelease') }
+if ((storeTask || System.getenv('EXPO_PUBLIC_APP_ENV') == 'production') && !storeRelease) {
+    throw new GradleException('Store bundles and production builds require LEX_ANDROID_RELEASE_MODE=store and private signing configuration.')
+}
+def releaseSetting = { String name ->
+    def value = System.getenv(name)
+    if (!value?.trim()) throw new GradleException("Missing release setting: ${name}")
+    return value
+}
+def storeApplicationId = storeRelease ? releaseSetting('LEX_ANDROID_APPLICATION_ID') : 'com.lexnigeria.test'
+if (storeRelease && (storeApplicationId == 'com.lexnigeria.test' || !storeApplicationId.matches('[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+'))) {
+    throw new GradleException('Confirm a production Android application ID before a store build.')
+}
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -89,7 +103,7 @@ android {
 
     namespace 'com.lexnigeria.test'
     defaultConfig {
-        applicationId 'com.lexnigeria.test'
+        applicationId storeApplicationId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 3
@@ -104,15 +118,27 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (storeRelease) {
+            store {
+                def signingFile = file(releaseSetting('LEX_ANDROID_KEYSTORE_PATH'))
+                def signingAlias = releaseSetting('LEX_ANDROID_KEY_ALIAS')
+                if (!signingFile.isFile() || signingFile.name == 'debug.keystore' || signingAlias == 'androiddebugkey') {
+                    throw new GradleException('A private, non-debug upload keystore and alias are required.')
+                }
+                storeFile signingFile
+                storePassword releaseSetting('LEX_ANDROID_STORE_PASSWORD')
+                keyAlias signingAlias
+                keyPassword releaseSetting('LEX_ANDROID_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Keep the existing internal install identity; never use it for store/production artifacts.
+            signingConfig storeRelease ? signingConfigs.store : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

@@ -290,7 +290,7 @@ describe("Lex Worker", () => {
     });
   });
 
-  it("exposes assigned client roles and versioned staging legal documents", async () => {
+  it("exposes assigned client roles without exposing unpublished legal drafts", async () => {
     const me = await SELF.fetch("https://lex.test/v1/auth/me", {
       headers: { authorization: `Bearer ${clientAccessToken}` },
     });
@@ -307,11 +307,12 @@ describe("Lex Worker", () => {
     const payload = await legal.json<{
       items: Array<{ code: string; status: string }>;
     }>();
-    expect(payload.items.length).toBeGreaterThanOrEqual(19);
-    expect(payload.items.some((item) => item.code === "privacy-notice")).toBe(
+    expect(payload.items.every((item) => item.status === "published")).toBe(
       true,
     );
-    expect(payload.items.every((item) => item.status === "draft")).toBe(true);
+    expect(payload.items.some((item) => item.code === "privacy-notice")).toBe(
+      false,
+    );
   });
 
   it("records Ask Lex disclosure, idempotent client turns and human review", async () => {

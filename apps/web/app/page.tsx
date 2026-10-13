@@ -853,7 +853,13 @@ export default function Workspace() {
     return (
       <main className="auth-shell">
         <section className="brand-panel">
-          <div className="logo">L</div>
+          <img
+            className="logo"
+            src="/lex-icon.png"
+            alt="Lex"
+            width={48}
+            height={48}
+          />
           <p className="eyebrow">Nigeria first · globally portable</p>
           <h1>
             Legal access,
@@ -987,7 +993,13 @@ export default function Workspace() {
     return (
       <main className="auth-shell">
         <section className="brand-panel">
-          <div className="logo">L</div>
+          <img
+            className="logo"
+            src="/lex-icon.png"
+            alt="Lex"
+            width={48}
+            height={48}
+          />
           <p className="eyebrow">Join the verified Lex network</p>
           <h1>
             Apply as a<br />
@@ -1213,7 +1225,14 @@ export default function Workspace() {
     <main className="workspace">
       <aside>
         <div className="wordmark">
-          <span>L</span> Lex
+          <img
+            className="logo"
+            src="/lex-icon.png"
+            alt=""
+            width={48}
+            height={48}
+          />{" "}
+          Lex
         </div>
         <nav>
           <a
@@ -1760,6 +1779,21 @@ export default function Workspace() {
         ) : null}
         {tab === "legal" ? (
           <Panel title="Versioned Legal Centre">
+            <p>
+              <a href="/legal/">Read effective public policies</a>
+              {session.user.role === "owner" ? (
+                <>
+                  {" "}
+                  · <a href="/legal/review/">Review drafts and approvals</a>
+                </>
+              ) : null}
+            </p>
+            {!legalDocuments.length ? (
+              <p>
+                No policies have been published. Authorized owners can review
+                the drafts privately.
+              </p>
+            ) : null}
             {legalDocuments.map((document) => (
               <details className="legal-document" key={document.version_id}>
                 <summary>

@@ -1,5 +1,19 @@
 # Lex UX, Roles, AI and Legal-Centre Verification Report
 
+## 2026-10-13 production preparation increment
+
+Implementation: 20 substantive review drafts, private intercompany document, immutable review packets/events, recipient-bound single-use invitations, explicit MFA/typed-name approval, distinct-owner publication, public effective-policy routes, append-only consent history, responsive review UI and approved icon concept 2 exports. Default internal Android signing is retained; store/production artifacts require private signing inputs.
+
+Local evidence: API integration tests include account-scoped MFA throttling, owner isolation, invitation expiry/rotation/replay, explicit approval, content immutability, unresolved-field publication refusal, effective-version selection and consent history. API/jobs/mobile TypeScript checks and the Next.js static build are exercised separately. Current runtime tests fall back to 2026-03-10; that does not prove exact production-runtime parity.
+
+Wrangler 4.120.0 deploy dry-runs pass. API startup profiling is blocked because its installed profiler runtime supports 2026-08-08, one day older than the configured compatibility date. A Wrangler update encountered repeated package-registry download failures; the attempted dependency lock changes were reverted without changing application behavior. No startup-time/Free-plan CPU claim is made.
+
+Remote changes are deployed in order: additive migration 0005 using a scoped migration directory; new API protecting private drafts; migration 0006 inserting the substantive drafts; jobs and web. This avoids exposing the private intercompany draft through the legacy endpoint during rollout. Recovery bookmark captured before rollout: `000048d1-00000000-00005103-fa198ec0284053ac734652ed9c803f47`. A bookmark is not a completed restore drill.
+
+Still outstanding: Node/PostgreSQL Docker parity and migration rehearsal, malware scanning/backups/restore drills, actual provider/payment/email/push tests, lawyer/native-language approval, final company contact/retention/commercial schedules, signed store artifacts and physical-device acceptance. No email, legal approval, Apple conversion or store upload is represented as completed.
+
+Deployment and native-resource results are recorded below after execution.
+
 Date: 2026-08-11
 Scope: `C:\Users\ahmed\Applications\Lex` only; synthetic data only.
 

@@ -149,9 +149,9 @@ export const openApiDocument = {
     "/legal/documents": {
       get: {
         tags: ["legal"],
-        security: [{ bearerAuth: [] }],
+        security: [],
         responses: {
-          "200": { description: "Role-appropriate versioned legal documents" },
+          "200": { description: "Login-free effective public policies; unpublished versions are excluded" },
         },
       },
     },

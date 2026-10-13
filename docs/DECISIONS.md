@@ -27,7 +27,16 @@
 | AI visibility     | Approved                        | Ask Lex and WhatsApp show AI assistance, client correction and confirmation, deterministic fallback, human review and routing challenge                    |
 | iOS preparation   | Approved without upload         | TestFlight profiles, privacy manifest, metadata and release guards may be prepared; no App Store record or upload is authorized                            |
 
-## External prerequisites
+## Production preparation decisions recorded 2026-10-13
+
+- Golden Epic Limited is the proposed Nigerian operator, contracting entity and payment merchant. GoldenEpic Solutions Inc. is the technology provider and proposed publisher, subject to store eligibility and the intercompany agreement. Common ownership does not transfer IP or establish a corporate hierarchy.
+- Canadian incorporation date is 24 October 2024 from the certificate; the D&B display of 23 October needs correction. Nigerian RC 1538879 and incorporation on 5 November 2018 were verified from the supplied certificate. Current addresses/directors/ownership were owner-confirmed.
+- Docker is the new deployment target, but the existing Cloudflare staging remains authoritative until the Hono/PostgreSQL/queue/storage port passes migration and behavior parity. The legacy NestJS Compose stack is not that port.
+- Icon concept 2, conversation and scales, was approved by the owner. Platform exports are based on that exact artwork.
+- The Apple membership conversion is preparation only: no account-wide request, store upload or public release without the owner's next authorization.
+- Electronic legal review is version-bound and authenticated with MFA. Distinct-owner publication is separate. No email opening, AI draft, or synthetic test constitutes approval.
+
+## External prerequisites carried forward
 
 - Meta test number/app credentials, approved templates and webhook subscription.
 - OpenAI guided intake is provider-verified with synthetic data; transcription still needs a separate real provider test.

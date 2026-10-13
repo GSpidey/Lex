@@ -9,6 +9,91 @@
   --gold: #c99146;
   --danger: #a34031;
 }
+.legal-shell {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: clamp(20px, 5vw, 64px);
+  line-height: 1.65;
+}
+.legal-shell nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 36px;
+}
+.legal-shell a {
+  color: var(--green);
+  text-underline-offset: 4px;
+}
+.legal-shell h1 {
+  font:
+    500 clamp(32px, 5vw, 52px)/1.1 Georgia,
+    serif;
+}
+.legal-card {
+  padding: clamp(18px, 3vw, 32px);
+  margin: 22px 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--white);
+}
+.legal-card summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+.legal-card button {
+  margin: 8px 12px 8px 0;
+}
+.legal-copy {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.8;
+}
+.legal-shell textarea {
+  width: 100%;
+  font: inherit;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.legal-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.legal-inline input {
+  flex: 1;
+  min-width: 150px;
+}
+.legal-check {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  margin: 16px 0;
+}
+.legal-check input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin-top: 4px;
+}
+.legal-draft {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+.legal-hash {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.legal-editor {
+  font-family: monospace !important;
+}
+.legal-shell :focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
 * {
   box-sizing: border-box;
 }

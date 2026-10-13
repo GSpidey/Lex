@@ -1970,14 +1970,16 @@ function LegalCentre(props: { documents: LegalDocument[]; back: () => void }) {
   return (
     <Shell back={props.back} title="Legal centre">
       <Card dark>
-        <Text style={styles.kickerLight}>CONTROLLED STAGING DRAFTS</Text>
+        <Text style={styles.kickerLight}>LEX LEGAL CENTRE</Text>
         <Text style={styles.heroLight}>Legal documents and disclosures</Text>
         <Text style={styles.bodyLight}>
-          These documents are versioned staging drafts. Public use remains
-          blocked until the parent company details and lawyer-co-founder
-          approvals are recorded.
+          Read effective policies and disclosures here. New drafts do not
+          replace the version that applies to your service until publication.
         </Text>
       </Card>
+      {!props.documents.length ? (
+        <Notice text="No policies are published in your selected language yet. This private test release is not open for real legal matters." />
+      ) : null}
       {props.documents.map((document) => (
         <AccordionSection
           key={document.version_id}
