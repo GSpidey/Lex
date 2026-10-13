@@ -1,7 +1,12 @@
 import { decrypt, encrypt, hmac } from "./crypto.js";
 import { optionalProcessingAllowed } from "@lex/d1/optional-processing";
+import {
+  emailConfigured,
+  sendEmail,
+  type EmailConfiguration,
+} from "./email.js";
 
-interface Env {
+interface Env extends EmailConfiguration {
   DB: D1Database;
   PRIVATE_EVIDENCE: R2Bucket;
   JOBS_QUEUE: Queue<{ jobId: string }>;
@@ -14,8 +19,6 @@ interface Env {
   META_AUTH_LOCALE: string;
   META_STATUS_TEMPLATE: string;
   EMAIL_DELIVERY_ENABLED: string;
-  POSTMARK_FROM_EMAIL: string;
-  POSTMARK_MESSAGE_STREAM: string;
   OPENAI_INTAKE_MODEL: string;
   META_ACCESS_TOKEN?: string;
   META_PHONE_NUMBER_ID?: string;
@@ -37,6 +40,10 @@ interface JobRow {
   attempts: number;
 }
 const now = () => new Date().toISOString();
+// Longer than a single Queue consumer execution, so a duplicate cannot steal
+// an in-flight claim. A crashed claim becomes recoverable by maintenance.
+const JOB_LEASE_MS = 30 * 60_000;
+const MAX_JOB_ATTEMPTS = 4;
 
 export default {
   async queue(batch: MessageBatch<JobMessage>, env: Env): Promise<void> {
@@ -71,41 +78,65 @@ export default {
   },
 };
 
-async function processMessage(jobId: string, env: Env) {
+export async function processMessage(jobId: string, env: Env) {
   const job = await env.DB.prepare(
     "SELECT id,kind,payload_json,state,attempts FROM jobs WHERE id=?",
   )
     .bind(jobId)
     .first<JobRow>();
-  if (!job || job.state === "completed") return;
+  if (!job || ["completed", "dead_letter"].includes(job.state)) return;
   const timestamp = now();
+  const expiredLease = new Date(Date.now() - JOB_LEASE_MS).toISOString();
+  // UPDATE ... RETURNING is the claim authority, not the preceding snapshot.
   const claim = await env.DB.prepare(
-    "UPDATE jobs SET state='processing',attempts=attempts+1,locked_at=?,updated_at=? WHERE id=? AND state IN ('queued','retry','processing')",
+    "UPDATE jobs SET state='processing',attempts=attempts+1,locked_at=?,updated_at=? WHERE id=? AND attempts<? AND ((state IN ('queued','retry') AND available_at<=?) OR (state='processing' AND locked_at<?)) RETURNING attempts",
   )
-    .bind(timestamp, timestamp, jobId)
-    .run();
-  if ((claim.meta.changes ?? 0) !== 1) return;
+    .bind(
+      timestamp,
+      timestamp,
+      jobId,
+      MAX_JOB_ATTEMPTS,
+      timestamp,
+      expiredLease,
+    )
+    .first<{ attempts: number }>();
+  if (!claim) {
+    await env.DB.prepare(
+      "UPDATE jobs SET state='dead_letter',locked_at=NULL,updated_at=? WHERE id=? AND attempts>=? AND (state IN ('queued','retry') OR (state='processing' AND locked_at<?))",
+    )
+      .bind(timestamp, jobId, MAX_JOB_ATTEMPTS, expiredLease)
+      .run();
+    return;
+  }
   try {
     const payload = JSON.parse(job.payload_json) as Record<string, unknown>;
-    await dispatch(job.kind, payload, env);
+    await dispatch(job.kind, payload, env, jobId);
     await env.DB.prepare(
-      "UPDATE jobs SET state='completed',completed_at=?,locked_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+      "UPDATE jobs SET state='completed',completed_at=?,locked_at=NULL,last_error=NULL,updated_at=? WHERE id=? AND state='processing' AND locked_at=? AND attempts=?",
     )
-      .bind(now(), now(), jobId)
+      .bind(now(), now(), jobId, timestamp, claim.attempts)
       .run();
   } catch (error) {
+    // Provider bodies, SQL bindings or destinations must never enter job logs.
     const safeError =
-      error instanceof Error
-        ? `${error.name}:${error.message}`.slice(0, 240)
-        : "job_error";
+      error instanceof Error &&
+      /^[A-Za-z][A-Za-z0-9_]{0,79}$/u.test(error.message)
+        ? error.message
+        : "JobExecutionFailed";
+    const exhausted = claim.attempts >= MAX_JOB_ATTEMPTS;
     await env.DB.prepare(
-      "UPDATE jobs SET state='retry',locked_at=NULL,last_error=?,available_at=?,updated_at=? WHERE id=?",
+      "UPDATE jobs SET state=?,locked_at=NULL,last_error=?,available_at=?,updated_at=? WHERE id=? AND state='processing' AND locked_at=? AND attempts=?",
     )
       .bind(
+        exhausted ? "dead_letter" : "retry",
         safeError,
-        new Date(Date.now() + 30_000).toISOString(),
+        new Date(
+          Date.now() + Math.min(900_000, 30_000 * 2 ** (claim.attempts - 1)),
+        ).toISOString(),
         now(),
         jobId,
+        timestamp,
+        claim.attempts,
       )
       .run();
     throw error;
@@ -116,15 +147,17 @@ export async function dispatch(
   kind: string,
   payload: Record<string, unknown>,
   env: Env,
+  jobId?: string,
 ) {
-  if (kind === "auth_otp") return sendOtp(payload, env);
+  const deliveryKey =
+    jobId ??
+    (await hmac(
+      `email-job:${kind}:${JSON.stringify(payload)}`,
+      env.AUTH_HMAC_PEPPER,
+    ));
+  if (kind === "auth_otp") return sendOtp(payload, env, deliveryKey);
   if (kind === "legal_review_invitation") {
-    if (
-      env.EMAIL_DELIVERY_ENABLED !== "true" ||
-      !env.POSTMARK_SERVER_TOKEN ||
-      !env.POSTMARK_FROM_EMAIL
-    )
-      throw new Error("EmailNotConfigured");
+    if (!emailConfigured(env)) throw new Error("EmailNotConfigured");
     const invitation = JSON.parse(
       await decrypt(String(payload.encrypted), env.FIELD_ENCRYPTION_KEY),
     ) as {
@@ -151,11 +184,12 @@ export async function dispatch(
       packet.token_hash !== invitation.tokenHash
     )
       return;
-    await sendPostmark(
+    await sendEmail(
       env,
       await decrypt(invitation.recipient, env.FIELD_ENCRYPTION_KEY),
       "Lex documents ready for your legal review",
       `Please review the Lex legal documents at the secure link below. Sign in to your own Owner workspace and verify MFA. You can comment, request changes or expressly approve the exact versions. Opening this email or link does not approve anything.\n\n${invitation.link}\n\nThe invitation expires in seven days. Do not forward it. Corporate execution and public publication remain separate actions.`,
+      deliveryKey,
     );
     return;
   }
@@ -167,7 +201,7 @@ export async function dispatch(
   if (
     ["urgent_matter_alert", "matter_status", "assessment_ready"].includes(kind)
   )
-    return sendMatterStatus(kind, payload, env);
+    return sendMatterStatus(kind, payload, env, deliveryKey);
   if (kind === "meta_status" || kind === "meta_inbound")
     return applyMetaEvent(payload, env);
   if (kind === "ai_intake_extraction") return extractIntake(payload, env);
@@ -175,18 +209,21 @@ export async function dispatch(
   throw new Error("UnsupportedJobKind");
 }
 
-async function sendOtp(payload: Record<string, unknown>, env: Env) {
+async function sendOtp(
+  payload: Record<string, unknown>,
+  env: Env,
+  deliveryKey: string,
+) {
   const envelope = JSON.parse(
     await decrypt(String(payload.encrypted), env.FIELD_ENCRYPTION_KEY),
   ) as { channel: string; destination: string; code: string; locale: string };
   if (envelope.channel === "email") {
-    if (!env.POSTMARK_SERVER_TOKEN || env.EMAIL_DELIVERY_ENABLED !== "true")
-      throw new Error("EmailNotConfigured");
-    await sendPostmark(
+    await sendEmail(
       env,
       envelope.destination,
       "Your Lex verification code",
       `Your Lex verification code is ${envelope.code}. It expires shortly. Do not share it.`,
+      deliveryKey,
     );
     return;
   }
@@ -870,6 +907,7 @@ async function sendMatterStatus(
   kind: string,
   payload: Record<string, unknown>,
   env: Env,
+  deliveryKey: string,
 ) {
   const matterId = String(payload.matterId ?? "");
   const row = await env.DB.prepare(
@@ -910,18 +948,14 @@ async function sendMatterStatus(
         matterId,
       ),
     );
-  if (
-    row.email === 1 &&
-    row.email_encrypted &&
-    env.POSTMARK_SERVER_TOKEN &&
-    env.EMAIL_DELIVERY_ENABLED === "true"
-  )
+  if (row.email === 1 && row.email_encrypted && emailConfigured(env))
     deliveries.push(
-      sendPostmark(
+      sendEmail(
         env,
         await decrypt(row.email_encrypted, env.FIELD_ENCRYPTION_KEY),
         "Lex matter update",
         body,
+        deliveryKey,
       ),
     );
   if (row.push === 1 && env.EXPO_ACCESS_TOKEN) {
@@ -982,29 +1016,6 @@ async function sendWhatsAppStatus(
     },
   );
   if (!response.ok) throw new Error("MetaStatusDeliveryFailed");
-}
-
-async function sendPostmark(
-  env: Env,
-  to: string,
-  subject: string,
-  textBody: string,
-): Promise<void> {
-  const response = await fetch("https://api.postmarkapp.com/email", {
-    method: "POST",
-    headers: {
-      "x-postmark-server-token": env.POSTMARK_SERVER_TOKEN!,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      From: env.POSTMARK_FROM_EMAIL,
-      To: to,
-      Subject: subject,
-      TextBody: textBody,
-      MessageStream: env.POSTMARK_MESSAGE_STREAM,
-    }),
-  });
-  if (!response.ok) throw new Error("PostmarkDeliveryFailed");
 }
 
 async function sendExpoPush(
@@ -1785,7 +1796,7 @@ async function sendWhatsAppText(
 
 async function runMaintenance(env: Env) {
   const timestamp = now();
-  const stale = new Date(Date.now() - 10 * 60_000).toISOString();
+  const stale = new Date(Date.now() - JOB_LEASE_MS).toISOString();
   const recoverable = await env.DB.prepare(
     "SELECT id,queue_name FROM jobs WHERE state IN ('queued','retry') AND available_at<=? OR (state='processing' AND locked_at<?) LIMIT 100",
   )

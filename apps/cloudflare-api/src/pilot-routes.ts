@@ -151,9 +151,10 @@ routes.get("/capabilities", (context) =>
         ? "configured_unverified"
         : "unconfigured",
       email:
-        context.env.EMAIL_DELIVERY_ENABLED === "true"
+        context.env.EMAIL_PROVIDER_STATUS ??
+        (context.env.EMAIL_DELIVERY_ENABLED === "true"
           ? "configured_unverified"
-          : "unconfigured",
+          : "unconfigured"),
     },
     whatsappImplemented: [
       "otp",
@@ -172,7 +173,7 @@ routes.get("/capabilities", (context) =>
       "openai",
       "paystack",
       "flutterwave",
-      "postmark",
+      context.env.EMAIL_PROVIDER ?? "postmark",
       "push",
     ],
   }),

@@ -39,7 +39,7 @@ Lex provides nationwide Nigerian intake and synthetic service testing across a g
 5. Add consultation scheduling, Durable Object live text coordination, D1-authoritative messages, voice notes, and lawyer assessment delivery.
 6. Add separate representation proposals, engagements, milestones, tasks, lawyer-confirmed deadlines, invoices, disputes, refunds, and termination.
 7. Generalize Paystack/Flutterwave sandbox payments and immutable allocation snapshots.
-8. Complete app/WhatsApp continuity and five-language typed/voice intake; connect Postmark and Expo Push through provider adapters.
+8. Complete app/WhatsApp continuity and five-language typed/voice intake; connect Resend and Expo Push through provider adapters. The owner selected their existing Resend account on 2026-10-13. Preserve the unused Postmark adapter without silently falling back to it. Lex will have a dedicated domain registered and DNS-managed at Cloudflare; no existing unrelated Resend domain is a substitute. Obtain exact price approval before purchase and exact-record approval before sender DNS changes.
 9. Rebuild the client home and lawyer/operations workspace around general legal access with no dead navigation.
 10. Verify migrations, authorization, idempotency, replay handling, R2 privacy, queues/DLQ, realtime reconnect, provider contracts, accessibility, Gradle APK, and iOS-ready configuration.
 11. Add assigned multi-role accounts, complete legal-professional verification, Owner provider diagnostics, Legal Centre drafts and dual-control production gates.

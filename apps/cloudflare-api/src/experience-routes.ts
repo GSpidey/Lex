@@ -1018,11 +1018,18 @@ function providerCapabilities(env: Env) {
     },
     email: {
       implemented: true,
-      configured: env.EMAIL_DELIVERY_ENABLED === "true",
+      provider: env.EMAIL_PROVIDER ?? "postmark",
+      configured:
+        Boolean(
+          env.EMAIL_PROVIDER_STATUS &&
+          env.EMAIL_PROVIDER_STATUS !== "unconfigured",
+        ) || env.EMAIL_DELIVERY_ENABLED === "true",
+      deliveryEnabled: env.EMAIL_DELIVERY_ENABLED === "true",
       status:
-        env.EMAIL_DELIVERY_ENABLED === "true"
+        env.EMAIL_PROVIDER_STATUS ??
+        (env.EMAIL_DELIVERY_ENABLED === "true"
           ? "ready_for_test"
-          : "unconfigured",
+          : "unconfigured"),
     },
   };
 }

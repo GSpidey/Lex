@@ -9,6 +9,8 @@ export interface Env {
   STAGING_TEST_LOGIN_ENABLED: string;
   STAGING_TEST_PHONE_E164: string;
   EMAIL_DELIVERY_ENABLED: string;
+  EMAIL_PROVIDER?: string;
+  EMAIL_PROVIDER_STATUS?: string;
   LEGAL_REVIEW_ORIGIN?: string;
   OPENAI_PROVIDER_STATUS: string;
   META_GRAPH_VERSION: string;

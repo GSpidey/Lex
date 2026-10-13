@@ -44,6 +44,6 @@
 - Meta test number/app credentials, approved templates and webhook subscription.
 - OpenAI guided intake is provider-verified with synthetic data; transcription still needs a separate real provider test.
 - Paystack and Flutterwave sandbox keys and verified lawyer test subaccounts.
-- Postmark Developer token/sender and Expo push credentials.
+- Resend Lex-specific sending key/verified sender and Expo push credentials. Resend supersedes Postmark as the selected email provider (owner direction, 2026-10-13); existing unrelated domains/keys remain untouched. Lex gets its own Cloudflare-managed domain after name and price approval. Postmark stays unused, with no automatic provider failover.
 - Apple credentials for iOS signing.
 - Recorded lawyer-co-founder, privacy and native-language approvals.

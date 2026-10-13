@@ -649,4 +649,59 @@ describe("Version-bound legal review", () => {
       200,
     );
   });
+  it("checks Postmark acceptance and disables email open/link tracking", async () => {
+    const emailEnv = {
+      ...env,
+      AUTH_HMAC_PEPPER: "synthetic-pepper-for-email-test-only",
+      EMAIL_PROVIDER: "postmark",
+      POSTMARK_SERVER_TOKEN: "synthetic-token-never-send",
+      POSTMARK_FROM_EMAIL: "sender@example.invalid",
+      POSTMARK_MESSAGE_STREAM: "outbound",
+      EMAIL_DELIVERY_ENABLED: "true",
+      OPENAI_INTAKE_MODEL: "synthetic",
+      META_STATUS_TEMPLATE: "synthetic",
+    };
+    const payload = {
+      encrypted: await encrypt(
+        JSON.stringify({
+          channel: "email",
+          destination: "recipient@example.invalid",
+          code: "123456",
+          locale: "en",
+        }),
+        env.FIELD_ENCRYPTION_KEY,
+      ),
+    };
+    fetchMock.activate();
+    fetchMock.disableNetConnect();
+    try {
+      fetchMock
+        .get("https://api.postmarkapp.com")
+        .intercept({
+          path: "/email",
+          method: "POST",
+          body: (body) => {
+            const message = JSON.parse(String(body));
+            return (
+              message.TrackOpens === false &&
+              message.TrackLinks === "None" &&
+              message.MessageStream === "outbound"
+            );
+          },
+        })
+        .reply(200, { ErrorCode: 0, MessageID: "synthetic-message" });
+      await expect(
+        dispatch("auth_otp", payload, emailEnv),
+      ).resolves.toBeUndefined();
+      fetchMock
+        .get("https://api.postmarkapp.com")
+        .intercept({ path: "/email", method: "POST" })
+        .reply(200, { ErrorCode: 422, Message: "Synthetic rejection" });
+      await expect(dispatch("auth_otp", payload, emailEnv)).rejects.toThrow(
+        "PostmarkDeliveryFailed",
+      );
+    } finally {
+      fetchMock.deactivate();
+    }
+  });
 });

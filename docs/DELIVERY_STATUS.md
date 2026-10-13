@@ -2,7 +2,7 @@
 
 ## 2026-10-13 production preparation (in progress)
 
-The approved update is recorded in the existing MVP plan. Earlier evidence below is historical, not current provider or production verification. Corporate roles and current registration details have been owner-confirmed. Icon 2, conversation/scales, is integrated in source. Twenty substantive documents and the version-bound, MFA-protected Owner review UI/API are implemented; public policies remain separated from unapproved drafts. Private invitation handoff works independently of email; Postmark remains unconfigured and no partner invitation has been sent. Store signing inputs are prepared, not supplied.
+The approved update is recorded in the existing MVP plan. Earlier evidence below is historical, not current provider or production verification. Corporate roles and current registration details have been owner-confirmed. Icon 2, conversation/scales, is integrated in source. Twenty substantive documents and the version-bound, MFA-protected Owner review UI/API are implemented; public policies remain separated from unapproved drafts. Private invitation handoff works independently of email. Resend is now selected; its adapter is locally tested but Lex-specific credentials and dedicated sender verification remain pending. An earlier Postmark test was API-accepted then DMARC-rejected; no partner invitation has been sent. Store signing inputs are prepared, not supplied.
 
 The continuation now runs a first Node/Hono/PostgreSQL slice in an isolated local Docker deployment. It serves catalogue/public-policy reads and explicitly reports that it is not ready for cutover. Cloudflare remains the working app backend. Mobile/web consent controls and AI/notification withdrawal enforcement are implemented; required agreement entry points and device/provider verification remain unfinished. See TEST_REPORT for exact deployment evidence; this increment is not public-release approval.
 
@@ -15,7 +15,9 @@ The continuation now runs a first Node/Hono/PostgreSQL slice in an isolated loca
 | Full Docker behavior / D1-R2 migration | not_started beyond first slice | Auth, matters, payments, queue/storage/realtime port, full graph import and rollback still required |
 | Consent UI and account-wide optional withdrawal | local_verified | Explicit Ask Lex choice, public mobile policies, web/mobile decisions, cross-channel/version tests and queued fallback |
 | Mandatory service/representation acceptances | implemented_unverified | Ledger exists; integration into every required entry point remains unfinished |
-| Actual provider / partner / store completion | unchanged | No new provider execution, partner approval, signing or store upload in this continuation |
+| Resend email adapter | local_verified | Stable retry key, escaped HTML/plain text, acceptance validation and explicit provider selection; no actual Resend send yet |
+| Queue claim/retry protection | local_verified | Atomic claims, fenced completion, expired lease recovery and bounded attempts; physical DLQ/realtime/provider reconciliation drills remain pending |
+| Actual provider / partner / store completion | incomplete | Postmark test rejected by DMARC; Resend pending. No partner approval, signing or store upload |
 
 ## 2026-08-11 experience increment
 

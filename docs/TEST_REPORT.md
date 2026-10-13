@@ -1,5 +1,17 @@
 # Lex UX, Roles, AI and Legal-Centre Verification Report
 
+## 2026-10-13 email-provider selection and queue continuation
+
+Owner selected their existing Resend account and reiterated that Lex needs its own Cloudflare-managed domain. No domain was purchased, transferred or reconfigured; unrelated existing Resend project domains/keys remain untouched. Resend is selected in API/jobs configuration but delivery remains inactive pending a Lex-specific key and verified sender. The retained Postmark credentials cannot be used automatically when Resend is selected.
+
+- 27 local Worker tests pass: 9 retained journeys, 11 legal/consent/email tests, 4 job claim tests and 3 Resend adapter contracts. Resend mocks exercise stable idempotency headers across retries, escaped HTML/plain text, missing credentials, HTTP rejection and malformed acceptance. They do not prove real email delivery. Runtime compatibility still falls back to 2026-03-10.
+- Jobs now claim with an atomic conditional update, fence completion/retry by lease and attempt, recover expired claims, and retain a terminal ledger record after four failed executions. These tests do not prove a physical Queue dead-letter drill or exactly-once external effects. Guided AI conversation-result/outbound-message idempotency still needs its separate audit.
+- One explicitly authorized Postmark test was accepted at 2026-10-13T19:51:39Z (message `ae956d55-17a3-4bcf-ac57-b162fd56bfdf`) but the recipient rejected it with DMARC policy error 550 5.7.509. This is failed delivery, not provider completion. No partner invitation was sent, no second test was attempted and the prepared sending-approval request was not submitted.
+- Security incident: opening Postmark's setup instructions exposed the original token in a tool response. The owner was informed immediately and removed/replaced the original token. Only the replacement remained in the provider UI and was installed through secret-management stdin without printing it. No token value is in this report/source. The retained replacement is unused after Resend selection.
+- Resend retry deduplication uses the durable job identifier. Provider keys last 24 hours; late/ambiguous delivery still requires reconciliation rather than an indefinite exactly-once claim. Resend domain open/click tracking must be verified disabled before delivery activation. No legal matter content should appear in ordinary status emails.
+
+References: [Resend send API](https://resend.com/docs/api-reference/emails/send-email), [retry keys](https://resend.com/docs/dashboard/emails/idempotency-keys), [Cloudflare DNS setup](https://resend.com/docs/guides/dns/cloudflare).
+
 ## 2026-10-13 Docker foundation and consent continuation
 
 Scope remains the Lex repository, the new `lex-docker` Compose project and existing isolated Lex staging Workers only. No client endpoint cutover, legal publication, partner signature, production money, APK/AAB assembly or store upload occurred.
