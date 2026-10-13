@@ -12,6 +12,8 @@ Remote changes are deployed in order: additive migration 0005 using a scoped mig
 
 Still outstanding: Node/PostgreSQL Docker parity and migration rehearsal, malware scanning/backups/restore drills, actual provider/payment/email/push tests, lawyer/native-language approval, final company contact/retention/commercial schedules, signed store artifacts and physical-device acceptance. No email, legal approval, Apple conversion or store upload is represented as completed.
 
+The append-only legal-acceptance API is implemented and tested, but document-specific acceptance is not yet wired into every required client/engagement entry point. Optional-processing withdrawal must also be verified against the affected AI/notification operations, not only against the new ledger. Full authenticated browser review and real-recipient delivery remain separate acceptance work.
+
 Completed deployment and verification:
 
 - Commit `8b823f9` pushed to the existing full-spectrum branch and draft PR. No unrelated repository or Cloudflare resource was changed.
