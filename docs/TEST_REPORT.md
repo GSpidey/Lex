@@ -12,6 +12,8 @@ Owner selected their existing Resend account and reiterated that Lex needs its o
 
 References: [Resend send API](https://resend.com/docs/api-reference/emails/send-email), [retry keys](https://resend.com/docs/dashboard/emails/idempotency-keys), [Cloudflare DNS setup](https://resend.com/docs/guides/dns/cloudflare).
 
+Rollout evidence: commit `4c1883a` pushed to the existing branch. API version `5f962c65-d7ed-4475-983e-9799e92416f4` and jobs version `bc2ebbdb-86b4-491f-bd8a-4d44d8716ae7` are deployed. Both strict TypeScript checks and Wrangler dry-runs pass; regenerated binding types include the selected provider. A first test-fixture type check failed because an explicitly undefined optional property violated exact optional typing; changed the missing-key fixture to an empty value and reran successfully. Final API suite remains 27/27 passing. Startup reported 52 ms API / 2 ms jobs, not request CPU measurements. Live same-origin health confirms staging/D1 reachable; anonymous capability access correctly requires authentication. No schema migration or web/mobile artifact change was needed. Sending remains false, and no Resend provider request or DNS write occurred.
+
 ## 2026-10-13 Docker foundation and consent continuation
 
 Scope remains the Lex repository, the new `lex-docker` Compose project and existing isolated Lex staging Workers only. No client endpoint cutover, legal publication, partner signature, production money, APK/AAB assembly or store upload occurred.
