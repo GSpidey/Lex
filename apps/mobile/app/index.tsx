@@ -8,8 +8,8 @@ import * as Crypto from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as Notifications from "expo-notifications";
-import { NIGERIA_STATES } from "@lex/jurisdictions";
-import { useEffect, useMemo, useState } from "react";
+import { NIGERIA_STATES, PRACTICE_AREAS } from "@lex/jurisdictions";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,6 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   APP_ENV,
   API_URL,
+  REALTIME_URL,
   api,
   clearSession,
   loadSession,
@@ -34,8 +35,9 @@ import {
   type Session,
 } from "@/lib/api";
 
-type Language = "en" | "pcm";
+type Language = "en" | "pcm" | "ha" | "yo" | "ig";
 type Role = "tenant" | "landlord";
+type ClientType = "adult_individual" | "minor" | "organization";
 type Question = {
   key: string;
   label: string;
@@ -50,6 +52,7 @@ type Workflow = {
   disclosure: string;
   questions: Question[];
   evidence: string[];
+  practiceAreaCode?: string;
 };
 type Summary = {
   summary: string;
@@ -64,6 +67,7 @@ type Intake = {
   state: string;
   jurisdictionStatus: string;
   workflow: Workflow;
+  service?: Workflow;
   version: number;
 };
 type Matter = {
@@ -72,6 +76,8 @@ type Matter = {
   state: string;
   urgency: string;
   state_code: string;
+  practice_area_code?: string;
+  client_type?: ClientType;
   version: number;
   due_at?: string | null;
 };
@@ -90,6 +96,13 @@ type MatterDetail = Matter & {
     next_steps_json: string;
   } | null;
   structuredSummary?: Summary;
+  consultation?: {
+    id: string;
+    state: string;
+    scheduled_start?: string | null;
+    scheduled_end?: string | null;
+    time_zone?: string | null;
+  } | null;
 };
 type Transcription = {
   id: string;
@@ -98,11 +111,86 @@ type Transcription = {
   confirmed_transcript?: string;
   version: number;
 };
+type RepresentationEngagement = {
+  id: string;
+  matter_id: string;
+  state: string;
+  proposals: Array<{
+    id: string;
+    version: number;
+    scope: string;
+    exclusions: string;
+    fee_summary: string;
+    expected_expenses: string;
+    cancellation_terms: string;
+    client_responsibilities: string;
+    state: string;
+  }>;
+  milestones: Array<{
+    id: string;
+    title: string;
+    state: string;
+    amount_minor?: number | null;
+  }>;
+  invoices: Array<{
+    id: string;
+    invoice_number: string;
+    description: string;
+    amount_minor: number;
+    state: string;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    state: string;
+    due_at?: string | null;
+  }>;
+  deadlines: Array<{
+    id: string;
+    title: string;
+    due_at: string;
+    source: string;
+  }>;
+  disputes: Array<{ id: string; reason_code: string; state: string }>;
+};
 type Preferences = { whatsapp: boolean; push: boolean; email: boolean };
 type CountryCode = {
   country: string;
   iso: string;
   dialCode: string;
+};
+type AiConversation = {
+  id: string;
+  state: string;
+  provider?: string;
+  classification_json?: string | null;
+  turns?: Array<{
+    id: string;
+    actor: "client" | "assistant" | "operations";
+    body: string;
+    status: string;
+    created_at: string;
+  }>;
+};
+type LegalDocument = {
+  id: string;
+  code: string;
+  title: string;
+  version_id: string;
+  version: number;
+  status: string;
+  content_markdown: string;
+  language: Language;
+  acceptance_kind:
+    "agreement" | "acknowledgement" | "optional_consent" | "notice";
+  company_placeholder_present: number;
+};
+type LegalConsent = {
+  id: string;
+  document_code: string;
+  document_version_id: string;
+  kind: "accepted" | "acknowledged" | "withdrawn";
+  occurred_at: string;
 };
 
 const COUNTRY_CODES: CountryCode[] = [
@@ -122,8 +210,8 @@ const STAGING_TEST_PHONE = "+2348000000001";
 const copy = {
   en: {
     welcome: "Welcome",
-    headline: "Your tenancy issue, clearly understood.",
-    start: "Start an assessment",
+    headline: "Your legal issue, clearly understood.",
+    start: "Get legal help",
     tenant: "Tenant",
     landlord: "Landlord",
     continue: "Continue with WhatsApp",
@@ -134,8 +222,8 @@ const copy = {
   },
   pcm: {
     welcome: "You are welcome",
-    headline: "Make we understand your tenancy matter well.",
-    start: "Start matter check",
+    headline: "Make we understand your legal matter well.",
+    start: "Find legal help",
     tenant: "Tenant",
     landlord: "Landlord",
     continue: "Continue with WhatsApp",
@@ -143,6 +231,42 @@ const copy = {
     verify: "Verify and continue",
     confirm: "I confirm say this correct",
     submit: "Send am for lawyer matching",
+  },
+  ha: {
+    welcome: "Barka da zuwa",
+    headline: "Bari mu fahimci matsalarka ta doka sosai.",
+    start: "Nemi taimakon doka",
+    tenant: "Dan haya",
+    landlord: "Mai gida",
+    continue: "Ci gaba da WhatsApp",
+    code: "Lambar tantancewa",
+    verify: "Tabbatar ka ci gaba",
+    confirm: "Na tabbatar bayanan nan daidai ne",
+    submit: "Tura domin a hada da lauya",
+  },
+  yo: {
+    welcome: "Káàbọ̀",
+    headline: "Jẹ́ ká lóye ọ̀ràn òfin rẹ dáadáa.",
+    start: "Wá ìrànlọ́wọ́ òfin",
+    tenant: "Ayálégbé",
+    landlord: "Onílé",
+    continue: "Tẹ̀síwájú pẹ̀lú WhatsApp",
+    code: "Kóòdù ìmúdájú",
+    verify: "Jẹ́rìí kí o tẹ̀síwájú",
+    confirm: "Mo jẹ́rìí pé òtítọ́ ni",
+    submit: "Firanṣẹ́ fún ìbámu agbẹjọ́rò",
+  },
+  ig: {
+    welcome: "Nnọọ",
+    headline: "Ka anyị ghọta okwu iwu gị nke ọma.",
+    start: "Chọọ enyemaka iwu",
+    tenant: "Onye bi n'ụlọ mgbazinye",
+    landlord: "Onye nwe ụlọ",
+    continue: "Gaa n'ihu na WhatsApp",
+    code: "Koodu nkwenye",
+    verify: "Kwenye ma gaa n'ihu",
+    confirm: "Ekwenyere m na eziokwu ndị a ziri ezi",
+    submit: "Zipụ maka ijikọ ọka iwu",
   },
 };
 const stateChoices = NIGERIA_STATES.map(([code, name]) => ({ code, name }));
@@ -154,10 +278,22 @@ const title = (value: string) =>
 export default function LexApp() {
   const [session, setSession] = useState<Session | null | undefined>();
   const [screen, setScreen] = useState<
-    "home" | "intake" | "matter" | "settings" | "privacy"
+    | "home"
+    | "intake"
+    | "matter"
+    | "settings"
+    | "privacy"
+    | "ask"
+    | "ask-consent"
+    | "legal"
   >("home");
   const [language, setLanguage] = useState<Language>("en");
   const [role, setRole] = useState<Role>("tenant");
+  const [clientType, setClientType] = useState<ClientType>("adult_individual");
+  const [clientSubjectId, setClientSubjectId] = useState<string>();
+  const [subjectName, setSubjectName] = useState("");
+  const [subjectDetail, setSubjectDetail] = useState("");
+  const [practiceAreaCode, setPracticeAreaCode] = useState("not-sure");
   const [stateCode, setStateCode] = useState("LA");
   const [country, setCountry] = useState(COUNTRY_CODES[0]!);
   const [nationalNumber, setNationalNumber] = useState("");
@@ -169,6 +305,11 @@ export default function LexApp() {
   const [matters, setMatters] = useState<Matter[]>([]);
   const [matter, setMatter] = useState<MatterDetail | null>(null);
   const [messageBody, setMessageBody] = useState("");
+  const [liveConnected, setLiveConnected] = useState(false);
+  const liveSocket = useRef<WebSocket | null>(null);
+  const [engagement, setEngagement] = useState<RepresentationEngagement | null>(
+    null,
+  );
   const [transcription, setTranscription] = useState<Transcription | null>(
     null,
   );
@@ -194,6 +335,13 @@ export default function LexApp() {
     | "automated_routing_challenge"
   >("export");
   const [privacyDetails, setPrivacyDetails] = useState("");
+  const [aiConversation, setAiConversation] = useState<AiConversation | null>(
+    null,
+  );
+  const [aiMessage, setAiMessage] = useState("");
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocument[]>([]);
+  const [legalConsents, setLegalConsents] = useState<LegalConsent[]>([]);
+  const [aiConsentDocument, setAiConsentDocument] = useState<LegalDocument>();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -206,6 +354,7 @@ export default function LexApp() {
   useEffect(() => {
     if (session) void refreshMatters(session);
   }, [session]);
+  useEffect(() => () => liveSocket.current?.close(), []);
   const location = useMemo(
     () =>
       stateChoices.find((item) => item.code === stateCode)?.name ?? stateCode,
@@ -274,13 +423,77 @@ export default function LexApp() {
   async function startIntake() {
     if (!session) return;
     await run(async () => {
+      let subjectId = clientSubjectId;
+      if (clientType === "minor" && !subjectId) {
+        if (!subjectName.trim() || !/^\d{4}-\d{2}-\d{2}$/u.test(subjectDetail))
+          throw new Error(
+            "Enter the minor's display name and date of birth as YYYY-MM-DD.",
+          );
+        const profile = await api<{ id: string; status: string }>(
+          "/clients/minor",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              displayName: subjectName.trim(),
+              dateOfBirth: subjectDetail,
+            }),
+          },
+          session.accessToken,
+        );
+        subjectId = profile.id;
+        setClientSubjectId(profile.id);
+        setNotice(
+          "Protected minor profile created. Guardian verification or safeguarding review is required before detailed facts, evidence, lawyer sharing, or payment.",
+        );
+        return;
+      }
+      if (clientType === "organization" && !subjectId) {
+        if (!subjectName.trim() || !subjectDetail.trim())
+          throw new Error(
+            "Enter the organization's legal name and registration number.",
+          );
+        const organization = await api<{ id: string; status: string }>(
+          "/organizations",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              legalName: subjectName.trim(),
+              registrationNumber: subjectDetail.trim(),
+              organizationType: "other",
+            }),
+          },
+          session.accessToken,
+        );
+        subjectId = organization.id;
+        setClientSubjectId(organization.id);
+        setNotice(
+          "Organization profile created. Operations must approve authority evidence before detailed intake, lawyer sharing, matching, or payment.",
+        );
+        return;
+      }
+      if (clientType !== "adult_individual") {
+        setNotice(
+          clientType === "minor"
+            ? "Guardian verification is still pending."
+            : "Organization authority review is still pending.",
+        );
+        return;
+      }
       const created = await api<Intake>(
         "/intakes",
         {
           method: "POST",
           body: JSON.stringify({
             language,
-            tenancyRole: role,
+            clientType,
+            clientSubjectId: subjectId,
+            practiceAreaCode,
+            classificationStatus:
+              practiceAreaCode === "not-sure" || practiceAreaCode === "other"
+                ? "suggested"
+                : "selected",
+            issueRole: practiceAreaCode === "tenancy" ? role : undefined,
+            tenancyRole: practiceAreaCode === "tenancy" ? role : undefined,
             countryCode: "NG",
             stateCode,
             sourceChannel: "mobile",
@@ -288,7 +501,7 @@ export default function LexApp() {
         },
         session.accessToken,
       );
-      setIntake(created);
+      setIntake({ ...created, workflow: created.workflow ?? created.service! });
       setAnswers({});
       setSummary(null);
       setTranscription(null);
@@ -320,7 +533,7 @@ export default function LexApp() {
             version: intake.version,
             narrative: String(
               answers.timeline ??
-                "The client completed the guided tenancy intake.",
+                "The client completed the guided legal intake.",
             ),
             desiredOutcome: String(
               answers.desired_outcome ?? "Lawyer-reviewed assessment",
@@ -529,14 +742,43 @@ export default function LexApp() {
   async function openMatter(item: Matter) {
     if (!session) return;
     await run(async () => {
-      setMatter(
-        await api<MatterDetail>(`/matters/${item.id}`, {}, session.accessToken),
+      const detail = await api<MatterDetail>(
+        `/matters/${item.id}`,
+        {},
+        session.accessToken,
+      );
+      setMatter(detail);
+      const engagements = await api<Array<{ id: string; matter_id: string }>>(
+        "/engagements",
+        {},
+        session.accessToken,
+      );
+      const related = engagements.find((value) => value.matter_id === item.id);
+      setEngagement(
+        related
+          ? await api<RepresentationEngagement>(
+              `/engagements/${related.id}`,
+              {},
+              session.accessToken,
+            )
+          : null,
       );
       setScreen("matter");
     });
   }
   async function sendMessage() {
     if (!session || !matter || !messageBody.trim()) return;
+    if (liveConnected && liveSocket.current?.readyState === WebSocket.OPEN) {
+      liveSocket.current.send(
+        JSON.stringify({
+          type: "message",
+          clientMessageId: Crypto.randomUUID(),
+          body: messageBody.trim(),
+        }),
+      );
+      setMessageBody("");
+      return;
+    }
     await run(async () => {
       await api(
         `/matters/${matter.id}/messages`,
@@ -552,6 +794,60 @@ export default function LexApp() {
       );
       setMessageBody("");
       await openMatter(matter);
+    });
+  }
+  async function scheduleConsultation() {
+    if (!session || !matter) return;
+    await run(async () => {
+      const startsAt = new Date(Date.now() + 60 * 60_000).toISOString();
+      await api(
+        "/consultations",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            matterId: matter.id,
+            startsAt,
+            durationMinutes: 60,
+            mode: "live_text",
+            timeZone:
+              Intl.DateTimeFormat().resolvedOptions().timeZone ||
+              "Africa/Lagos",
+            idempotencyKey: `mobile:${matter.id}:initial`,
+          }),
+        },
+        session.accessToken,
+      );
+      await openMatter(matter);
+      setNotice(
+        "Consultation scheduled. Both participants can join through Lex.",
+      );
+    });
+  }
+  async function joinConsultation() {
+    if (!session || !matter?.consultation) return;
+    await run(async () => {
+      liveSocket.current?.close();
+      const token = await api<{ token: string }>(
+        `/consultations/${matter.consultation!.id}/realtime-token`,
+        { method: "POST" },
+        session.accessToken,
+      );
+      const socketUrl = `${REALTIME_URL.replace(/^http/u, "ws")}/consultations/${matter.consultation!.id}`;
+      const socket = new WebSocket(socketUrl, [
+        "lex.realtime.v1",
+        `bearer.${token.token}`,
+      ]);
+      liveSocket.current = socket;
+      socket.onopen = () => {
+        setLiveConnected(true);
+        setNotice("Live text consultation connected.");
+      };
+      socket.onmessage = () => void openMatter(matter);
+      socket.onerror = () =>
+        setNotice(
+          "Live consultation could not connect. Secure matter messages still work.",
+        );
+      socket.onclose = () => setLiveConnected(false);
     });
   }
   async function matterAction(kind: "reassignment" | "refund") {
@@ -591,6 +887,55 @@ export default function LexApp() {
       await Linking.openURL(payment.checkoutUrl);
       setNotice(
         "Return to Lex after sandbox checkout. Server verification controls payment status.",
+      );
+    });
+  }
+  async function acceptRepresentation() {
+    if (!session || !engagement) return;
+    const offered = engagement.proposals.find(
+      (proposal) => proposal.state === "offered",
+    );
+    if (!offered) return;
+    await run(async () => {
+      await api(
+        `/engagements/${engagement.id}/accept`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            proposalVersion: offered.version,
+            consentVersion: "representation-consent-v1",
+            accepted: true,
+          }),
+        },
+        session.accessToken,
+      );
+      if (matter) await openMatter(matter);
+      setNotice(
+        "Representation proposal accepted. The lawyer must reconfirm conflicts before any separate invoice can be paid.",
+      );
+    });
+  }
+  async function payInvoice(
+    invoiceId: string,
+    provider: "paystack" | "flutterwave",
+  ) {
+    if (!session) return;
+    await run(async () => {
+      const payment = await api<{ checkoutUrl: string }>(
+        "/payments/initialize",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            invoiceId,
+            provider,
+            callbackUrl: "lex://payment-result",
+          }),
+        },
+        session.accessToken,
+      );
+      await Linking.openURL(payment.checkoutUrl);
+      setNotice(
+        "Return after sandbox checkout. The server verifies the invoice payment and direct split.",
       );
     });
   }
@@ -674,11 +1019,208 @@ export default function LexApp() {
     });
   }
 
+  async function openAskLex() {
+    if (!session) return;
+    await run(async () => {
+      const policies = await api<{ items: LegalDocument[] }>(
+        "/legal/documents?language=en",
+      );
+      setAiConsentDocument(
+        policies.items.find((item) => item.code === "ai-routing-disclosure"),
+      );
+      setScreen("ask-consent");
+    });
+  }
+
+  async function beginAskLex() {
+    if (!session) return;
+    await run(async () => {
+      if (aiConsentDocument)
+        await api(
+          "/legal/acceptances",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              documentVersionId: aiConsentDocument.version_id,
+              language: aiConsentDocument.language,
+              channel: "mobile",
+              accepted: true,
+            }),
+          },
+          session.accessToken,
+        );
+      const created = await api<AiConversation>(
+        "/ai/intake-sessions",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            channel: "mobile",
+            language,
+            aiDisclosureAccepted: true,
+            aiDisclosureVersion:
+              aiConsentDocument?.version_id ??
+              "ai-routing-disclosure-en-v1-staging-draft",
+          }),
+        },
+        session.accessToken,
+      );
+      setAiConversation({ ...created, turns: [] });
+      setScreen("ask");
+    });
+  }
+
+  async function refreshAiConversation(id = aiConversation?.id) {
+    if (!session || !id) return;
+    const refreshed = await api<AiConversation>(
+      `/ai/intake-sessions/${id}`,
+      {},
+      session.accessToken,
+    );
+    setAiConversation(refreshed);
+  }
+
+  async function sendAiMessage() {
+    if (!session || !aiConversation || !aiMessage.trim()) return;
+    const body = aiMessage.trim();
+    setAiMessage("");
+    await run(async () => {
+      await api(
+        `/ai/intake-sessions/${aiConversation.id}/messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            body,
+            clientMessageId: `${Date.now()}-${await Crypto.randomUUID()}`,
+          }),
+        },
+        session.accessToken,
+      );
+      setAiConversation((current) => ({
+        ...(current ?? aiConversation),
+        state: "processing",
+        turns: [
+          ...(current?.turns ?? []),
+          {
+            id: `local-${Date.now()}`,
+            actor: "client",
+            body,
+            status: "recorded",
+            created_at: new Date().toISOString(),
+          },
+        ],
+      }));
+      setTimeout(() => void refreshAiConversation(aiConversation.id), 1_500);
+    });
+  }
+
+  async function requestAiHumanReview(kind: "challenge" | "human-review") {
+    if (!session || !aiConversation) return;
+    await run(async () => {
+      await api(
+        `/ai/intake-sessions/${aiConversation.id}/${kind}`,
+        { method: "POST" },
+        session.accessToken,
+      );
+      await refreshAiConversation(aiConversation.id);
+    });
+  }
+
+  async function confirmAiClassification() {
+    if (!session || !aiConversation) return;
+    let suggested = practiceAreaCode;
+    try {
+      const parsed = JSON.parse(aiConversation.classification_json ?? "{}") as {
+        suggestedPracticeAreaCodes?: string[];
+      };
+      suggested = parsed.suggestedPracticeAreaCodes?.[0] ?? practiceAreaCode;
+    } catch {
+      // The client can still use the catalogue selection if a stale payload is malformed.
+    }
+    await run(async () => {
+      await api(
+        `/ai/intake-sessions/${aiConversation.id}/confirm`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            practiceAreaCode: suggested,
+            confirmed: true,
+          }),
+        },
+        session.accessToken,
+      );
+      setPracticeAreaCode(suggested);
+      setNotice(
+        "AI-organized information confirmed. Continue through the guided intake to share it with a lawyer.",
+      );
+      setScreen("home");
+    });
+  }
+
+  async function openLegalCentre() {
+    await run(async () => {
+      const result = await api<{ items: LegalDocument[] }>(
+        `/legal/documents?language=${language}`,
+        {},
+        session?.accessToken,
+      );
+      setLegalDocuments(result.items);
+      const consents = session
+        ? await api<{ items: LegalConsent[] }>(
+            "/legal/acceptances",
+            {},
+            session.accessToken,
+          )
+        : { items: [] };
+      setLegalConsents(consents.items);
+      setScreen("legal");
+    });
+  }
+
+  async function updateLegalConsent(
+    document: LegalDocument,
+    withdraw: boolean,
+  ) {
+    if (!session) return;
+    await run(async () => {
+      await api(
+        withdraw ? "/legal/withdrawals" : "/legal/acceptances",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            documentVersionId: document.version_id,
+            language: document.language,
+            channel: "mobile",
+            ...(!withdraw ? { accepted: true } : {}),
+          }),
+        },
+        session.accessToken,
+      );
+      const consents = await api<{ items: LegalConsent[] }>(
+        "/legal/acceptances",
+        {},
+        session.accessToken,
+      );
+      setLegalConsents(consents.items);
+    });
+  }
+
   if (session === undefined)
     return (
       <View style={styles.loading}>
         <ActivityIndicator color="#1e6248" />
       </View>
+    );
+  if (screen === "legal")
+    return (
+      <LegalCentre
+        documents={legalDocuments}
+        consents={legalConsents}
+        signedIn={Boolean(session)}
+        busy={busy}
+        notice={notice}
+        update={updateLegalConsent}
+        back={() => setScreen("home")}
+      />
     );
   if (!session)
     return (
@@ -696,6 +1238,7 @@ export default function LexApp() {
         notice={notice}
         requestOtp={requestOtp}
         verifyOtp={verifyOtp}
+        openLegalCentre={openLegalCentre}
         useStagingTestNumber={() => {
           setCountry(COUNTRY_CODES[0]!);
           setNationalNumber(STAGING_TEST_PHONE.slice(4));
@@ -747,6 +1290,12 @@ export default function LexApp() {
         sendMessage={sendMessage}
         pay={pay}
         matterAction={matterAction}
+        liveConnected={liveConnected}
+        scheduleConsultation={scheduleConsultation}
+        joinConsultation={joinConsultation}
+        engagement={engagement}
+        acceptRepresentation={acceptRepresentation}
+        payInvoice={payInvoice}
       />
     );
   if (screen === "settings")
@@ -776,10 +1325,76 @@ export default function LexApp() {
         submit={createPrivacyRequest}
       />
     );
+  if (screen === "ask-consent")
+    return (
+      <Shell back={() => setScreen("home")} title="Before using Ask Lex">
+        <Card>
+          <Text style={styles.heading}>Optional AI-assisted intake</Text>
+          <Text style={styles.body}>
+            Lex can use an external AI service to organize the facts you provide
+            and suggest a legal category. This is not legal advice. Review and
+            correct every suggestion before sharing it with a lawyer. Avoid
+            unnecessary sensitive details.
+          </Text>
+          <Text style={styles.body}>
+            You can use the ordinary intake form instead. If AI is unavailable,
+            a guided questionnaire remains available. You can withdraw optional
+            consent through the Legal Centre; this stops future processing, but
+            cannot recall information already sent.
+          </Text>
+          {aiConsentDocument ? (
+            <Text style={styles.legalText}>
+              {aiConsentDocument.content_markdown}
+            </Text>
+          ) : null}
+          <Button
+            label="I agree — continue to Ask Lex"
+            onPress={beginAskLex}
+            busy={busy}
+          />
+          <Button
+            secondary
+            label="Use the ordinary intake form"
+            onPress={() => setScreen("home")}
+          />
+          {notice ? <Notice text={notice} /> : null}
+        </Card>
+      </Shell>
+    );
+  if (screen === "ask" && aiConversation)
+    return (
+      <AskLex
+        conversation={aiConversation}
+        message={aiMessage}
+        setMessage={setAiMessage}
+        busy={busy}
+        notice={notice}
+        back={() => setScreen("home")}
+        send={sendAiMessage}
+        refresh={() => refreshAiConversation()}
+        confirm={confirmAiClassification}
+        challenge={() => requestAiHumanReview("challenge")}
+        humanReview={() => requestAiHumanReview("human-review")}
+      />
+    );
   return (
     <Home
       language={language}
       setLanguage={setLanguage}
+      clientType={clientType}
+      setClientType={(value) => {
+        setClientType(value);
+        setClientSubjectId(undefined);
+        setSubjectName("");
+        setSubjectDetail("");
+      }}
+      subjectName={subjectName}
+      setSubjectName={setSubjectName}
+      subjectDetail={subjectDetail}
+      setSubjectDetail={setSubjectDetail}
+      subjectReady={Boolean(clientSubjectId)}
+      practiceAreaCode={practiceAreaCode}
+      setPracticeAreaCode={setPracticeAreaCode}
       role={role}
       setRole={setRole}
       stateCode={stateCode}
@@ -788,6 +1403,8 @@ export default function LexApp() {
       notice={notice}
       busy={busy}
       startIntake={startIntake}
+      openAskLex={openAskLex}
+      openLegalCentre={openLegalCentre}
       openMatter={openMatter}
       openSettings={loadSettings}
       signOut={async () => {
@@ -813,6 +1430,7 @@ function Auth(props: {
   requestOtp: () => void;
   verifyOtp: () => void;
   useStagingTestNumber: () => void;
+  openLegalCentre: () => void;
   resetChallenge: () => void;
 }) {
   const words = copy[props.language];
@@ -827,9 +1445,9 @@ function Auth(props: {
           <Text style={styles.kicker}>NIGERIA-FIRST MANAGED LEGAL ACCESS</Text>
           <Text style={styles.hero}>{words.headline}</Text>
           <Text style={styles.body}>
-            Lex organizes your facts and routes eligible Lagos matters to
-            verified lawyers. It is not an emergency service or automated legal
-            adviser.
+            Lex organizes your confirmed facts and connects eligible matters
+            nationwide with verified lawyers. It is not an emergency service or
+            an automated legal adviser.
           </Text>
           <View style={styles.row}>
             <Chip
@@ -841,6 +1459,21 @@ function Auth(props: {
               label="Pidgin"
               active={props.language === "pcm"}
               onPress={() => props.setLanguage("pcm")}
+            />
+            <Chip
+              label="Hausa"
+              active={props.language === "ha"}
+              onPress={() => props.setLanguage("ha")}
+            />
+            <Chip
+              label="Yoruba"
+              active={props.language === "yo"}
+              onPress={() => props.setLanguage("yo")}
+            />
+            <Chip
+              label="Igbo"
+              active={props.language === "ig"}
+              onPress={() => props.setLanguage("ig")}
             />
           </View>
           <Card>
@@ -903,6 +1536,12 @@ function Auth(props: {
                 />
               </>
             )}
+            <Button
+              secondary
+              label="Read terms and privacy notices"
+              onPress={props.openLegalCentre}
+              busy={props.busy}
+            />
             {props.notice ? <Notice text={props.notice} /> : null}
           </Card>
         </ScrollView>
@@ -960,6 +1599,15 @@ function CountryCodeDropdown({
 function Home(props: {
   language: Language;
   setLanguage: (value: Language) => void;
+  clientType: ClientType;
+  setClientType: (value: ClientType) => void;
+  subjectName: string;
+  setSubjectName: (value: string) => void;
+  subjectDetail: string;
+  setSubjectDetail: (value: string) => void;
+  subjectReady: boolean;
+  practiceAreaCode: string;
+  setPracticeAreaCode: (value: string) => void;
   role: Role;
   setRole: (value: Role) => void;
   stateCode: string;
@@ -968,22 +1616,51 @@ function Home(props: {
   notice: string;
   busy: boolean;
   startIntake: () => void;
+  openAskLex: () => void;
+  openLegalCentre: () => void;
   openMatter: (matter: Matter) => void;
   openSettings: () => void;
   signOut: () => void;
 }) {
   const words = copy[props.language];
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [openCatalogGroup, setOpenCatalogGroup] = useState<string>();
+  const [openSection, setOpenSection] = useState("language");
+  const visiblePracticeAreas = PRACTICE_AREAS.filter((item) => {
+    const query = catalogQuery.trim().toLowerCase();
+    return (
+      !query ||
+      [item.name, item.group, item.description, ...item.keywords].some(
+        (value) => value.toLowerCase().includes(query),
+      )
+    );
+  });
+  const selectedPracticeArea = PRACTICE_AREAS.find(
+    (item) => item.code === props.practiceAreaCode,
+  );
+  const catalogueGroups = Array.from(
+    PRACTICE_AREAS.reduce((groups, item) => {
+      const entries = groups.get(item.group) ?? [];
+      entries.push(item);
+      groups.set(item.group, entries);
+      return groups;
+    }, new Map<string, Array<(typeof PRACTICE_AREAS)[number]>>()),
+  );
   return (
     <Shell>
       <View style={styles.between}>
         <View>
-          <Text style={styles.kicker}>LEX CONTROLLED PILOT</Text>
+          <Text style={styles.kicker}>LEX NATIONWIDE TEST RELEASE</Text>
           <Text style={styles.heading}>Good day.</Text>
         </View>
-        <Button small label="Settings" onPress={props.openSettings} />
+        <View style={styles.row}>
+          <Button small label="Legal centre" onPress={props.openLegalCentre} />
+          <Button small label="Settings" onPress={props.openSettings} />
+        </View>
       </View>
       <Card dark>
-        <Text style={styles.kickerLight}>TENANCY SUPPORT</Text>
+        <Text style={styles.kickerLight}>MANAGED LEGAL ACCESS</Text>
         <Text style={styles.heroLight}>{words.headline}</Text>
         <Button
           light
@@ -991,50 +1668,308 @@ function Home(props: {
           onPress={props.startIntake}
           busy={props.busy}
         />
+        <Button
+          outlineLight
+          label="Ask Lex AI-assisted intake"
+          onPress={props.openAskLex}
+          busy={props.busy}
+        />
       </Card>
-      <Section label="Language">
+      <AccordionSection
+        label="Language"
+        summary={title(props.language === "pcm" ? "Pidgin" : props.language)}
+        open={openSection === "language"}
+        onToggle={() =>
+          setOpenSection(openSection === "language" ? "" : "language")
+        }
+      >
         <View style={styles.row}>
           <Chip
             label="English"
             active={props.language === "en"}
-            onPress={() => props.setLanguage("en")}
+            onPress={() => {
+              props.setLanguage("en");
+              setOpenSection("client");
+            }}
           />
           <Chip
             label="Pidgin"
             active={props.language === "pcm"}
-            onPress={() => props.setLanguage("pcm")}
-          />
-        </View>
-      </Section>
-      <Section label="I am the">
-        <View style={styles.row}>
-          <Chip
-            label={words.tenant}
-            active={props.role === "tenant"}
-            onPress={() => props.setRole("tenant")}
+            onPress={() => {
+              props.setLanguage("pcm");
+              setOpenSection("client");
+            }}
           />
           <Chip
-            label={words.landlord}
-            active={props.role === "landlord"}
-            onPress={() => props.setRole("landlord")}
+            label="Hausa"
+            active={props.language === "ha"}
+            onPress={() => {
+              props.setLanguage("ha");
+              setOpenSection("client");
+            }}
+          />
+          <Chip
+            label="Yoruba"
+            active={props.language === "yo"}
+            onPress={() => {
+              props.setLanguage("yo");
+              setOpenSection("client");
+            }}
+          />
+          <Chip
+            label="Igbo"
+            active={props.language === "ig"}
+            onPress={() => {
+              props.setLanguage("ig");
+              setOpenSection("client");
+            }}
           />
         </View>
-      </Section>
-      <Section label="Property state">
+      </AccordionSection>
+      <AccordionSection
+        label="Who needs help?"
+        summary={title(props.clientType)}
+        open={openSection === "client"}
+        onToggle={() =>
+          setOpenSection(openSection === "client" ? "" : "client")
+        }
+      >
+        <View style={styles.wrap}>
+          <Chip
+            label="Adult individual"
+            active={props.clientType === "adult_individual"}
+            onPress={() => {
+              props.setClientType("adult_individual");
+              setOpenSection("location");
+            }}
+          />
+          <Chip
+            label="Person under 18"
+            active={props.clientType === "minor"}
+            onPress={() => props.setClientType("minor")}
+          />
+          <Chip
+            label="Organization"
+            active={props.clientType === "organization"}
+            onPress={() => props.setClientType("organization")}
+          />
+        </View>
+        {props.clientType !== "adult_individual" ? (
+          <>
+            <Label
+              text={
+                props.clientType === "minor"
+                  ? "Minor display name"
+                  : "Organization legal name"
+              }
+            />
+            <TextInput
+              style={styles.input}
+              value={props.subjectName}
+              onChangeText={props.setSubjectName}
+            />
+            <Label
+              text={
+                props.clientType === "minor"
+                  ? "Date of birth (YYYY-MM-DD)"
+                  : "Registration number"
+              }
+            />
+            <TextInput
+              style={styles.input}
+              value={props.subjectDetail}
+              onChangeText={props.setSubjectDetail}
+            />
+            <Notice
+              text={
+                props.subjectReady
+                  ? "Protected profile exists and is awaiting the required human verification."
+                  : props.clientType === "minor"
+                    ? "Tap Get legal help to create only a minimal protected profile. Detailed facts, evidence, lawyer sharing and payment stay locked until verified guardian consent or safeguarding review."
+                    : "Tap Get legal help to create the organization record. Authority review must be approved before detailed intake, lawyer sharing, matching or payment."
+              }
+            />
+          </>
+        ) : null}
+      </AccordionSection>
+      <AccordionSection
+        label="Location"
+        summary={
+          stateChoices.find((item) => item.code === props.stateCode)?.name ??
+          props.stateCode
+        }
+        open={openSection === "location"}
+        onToggle={() =>
+          setOpenSection(openSection === "location" ? "" : "location")
+        }
+      >
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {stateChoices.map((item) => (
             <Chip
               key={item.code}
               label={item.name}
               active={props.stateCode === item.code}
-              onPress={() => props.setStateCode(item.code)}
+              onPress={() => {
+                props.setStateCode(item.code);
+                setOpenSection("legal");
+              }}
             />
           ))}
         </ScrollView>
-        {props.stateCode !== "LA" ? (
-          <Notice text="This state is intake-only. Lawyer matching and payment remain unavailable." />
+        <Notice text="All states and the FCT are enabled for synthetic testing. If no verified eligible lawyer is available, operations assists before conflict review or payment." />
+      </AccordionSection>
+      <AccordionSection
+        label="Legal issue"
+        summary={selectedPracticeArea?.name ?? "Not sure"}
+        open={openSection === "legal"}
+        onToggle={() => setOpenSection(openSection === "legal" ? "" : "legal")}
+      >
+        <View style={styles.searchRow}>
+          <TextInput
+            accessibilityLabel="Search legal issue catalogue"
+            style={[styles.input, styles.searchInput]}
+            value={catalogQuery}
+            onChangeText={setCatalogQuery}
+            placeholder="Search police, divorce, debt…"
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: catalogOpen }}
+            accessibilityLabel="Browse grouped legal issue catalogue"
+            style={styles.catalogTrigger}
+            onPress={() => setCatalogOpen((current) => !current)}
+          >
+            <Text style={styles.catalogTriggerText}>
+              {catalogOpen ? "Close" : "Browse"} ▾
+            </Text>
+          </Pressable>
+        </View>
+        {catalogQuery.trim() ? (
+          <View style={styles.catalog}>
+            {visiblePracticeAreas.map((item) => (
+              <Chip
+                key={item.code}
+                label={item.name}
+                active={props.practiceAreaCode === item.code}
+                onPress={() => {
+                  props.setPracticeAreaCode(item.code);
+                  setCatalogQuery("");
+                  setOpenSection(
+                    item.code === "tenancy" ? "addendum" : "consultation",
+                  );
+                }}
+              />
+            ))}
+          </View>
         ) : null}
-      </Section>
+        {catalogOpen ? (
+          <View style={styles.catalogBranches}>
+            {catalogueGroups.map(([group, items]) => (
+              <View key={group}>
+                <Pressable
+                  style={styles.branchHeader}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: openCatalogGroup === group }}
+                  onPress={() =>
+                    setOpenCatalogGroup(
+                      openCatalogGroup === group ? undefined : group,
+                    )
+                  }
+                >
+                  <Text style={styles.strong}>{group}</Text>
+                  <Text style={styles.arrow}>
+                    {openCatalogGroup === group ? "−" : "+"}
+                  </Text>
+                </Pressable>
+                {openCatalogGroup === group ? (
+                  <View style={styles.catalog}>
+                    {items.map((item) => (
+                      <Chip
+                        key={item.code}
+                        label={item.name}
+                        active={props.practiceAreaCode === item.code}
+                        onPress={() => {
+                          props.setPracticeAreaCode(item.code);
+                          setCatalogOpen(false);
+                          setOpenSection(
+                            item.code === "tenancy"
+                              ? "addendum"
+                              : "consultation",
+                          );
+                        }}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {selectedPracticeArea ? (
+          <Notice text={selectedPracticeArea.description} />
+        ) : null}
+        {visiblePracticeAreas.length === 0 ? (
+          <Notice text="No matching category. Choose Other or Not sure so Lex operations can help classify it." />
+        ) : null}
+      </AccordionSection>
+      {props.practiceAreaCode === "tenancy" ? (
+        <AccordionSection
+          label="Issue-specific questions"
+          summary={title(props.role)}
+          open={openSection === "addendum"}
+          onToggle={() =>
+            setOpenSection(openSection === "addendum" ? "" : "addendum")
+          }
+        >
+          <View style={styles.row}>
+            <Chip
+              label={words.tenant}
+              active={props.role === "tenant"}
+              onPress={() => {
+                props.setRole("tenant");
+                setOpenSection("consultation");
+              }}
+            />
+            <Chip
+              label={words.landlord}
+              active={props.role === "landlord"}
+              onPress={() => {
+                props.setRole("landlord");
+                setOpenSection("consultation");
+              }}
+            />
+          </View>
+        </AccordionSection>
+      ) : null}
+      <AccordionSection
+        label="Consultation preferences"
+        summary="Live text, voice notes and secure messages"
+        open={openSection === "consultation"}
+        onToggle={() =>
+          setOpenSection(openSection === "consultation" ? "" : "consultation")
+        }
+      >
+        <Notice text="The test release supports scheduled live text, asynchronous voice notes, documents and secure messages. Native audio and video calls are not included." />
+        <Button
+          label="Review and continue"
+          onPress={() => setOpenSection("review")}
+        />
+      </AccordionSection>
+      <AccordionSection
+        label="Review and continue"
+        summary={`${selectedPracticeArea?.name ?? "Not sure"} · ${stateChoices.find((item) => item.code === props.stateCode)?.name ?? props.stateCode}`}
+        open={openSection === "review"}
+        onToggle={() =>
+          setOpenSection(openSection === "review" ? "" : "review")
+        }
+      >
+        <Notice text="Lex will collect category-specific facts next. AI-organized information must be reviewed and confirmed before it can be shared with a lawyer." />
+        <Button
+          label={words.start}
+          onPress={props.startIntake}
+          busy={props.busy}
+        />
+      </AccordionSection>
       <Section label="Your matters">
         {props.matters.length === 0 ? (
           <Card>
@@ -1062,6 +1997,209 @@ function Home(props: {
       <Pressable onPress={props.signOut}>
         <Text style={styles.danger}>Sign out</Text>
       </Pressable>
+    </Shell>
+  );
+}
+
+function AskLex(props: {
+  conversation: AiConversation;
+  message: string;
+  setMessage: (value: string) => void;
+  busy: boolean;
+  notice: string;
+  back: () => void;
+  send: () => void;
+  refresh: () => void;
+  confirm: () => void;
+  challenge: () => void;
+  humanReview: () => void;
+}) {
+  return (
+    <Shell back={props.back} title="Ask Lex">
+      <Card dark>
+        <Text style={styles.kickerLight}>LEX AI-ASSISTED INTAKE</Text>
+        <Text style={styles.heroLight}>
+          Explain the issue in your own words.
+        </Text>
+        <Text style={styles.bodyLight}>
+          {props.conversation.provider === "openai"
+            ? "Powered by OpenAI in this test release. "
+            : "Guided questionnaire; external AI is not being used for this enquiry. "}
+          Lex organizes facts and suggests a category; it does not give legal
+          advice. You must confirm any AI-organized information before lawyer
+          sharing.
+        </Text>
+      </Card>
+      <View style={styles.statusRow}>
+        <Text style={styles.statusPill}>{title(props.conversation.state)}</Text>
+        <Text style={styles.meta}>
+          {props.conversation.provider === "openai"
+            ? "OpenAI configured"
+            : "Safe fallback available"}
+        </Text>
+      </View>
+      <Section label="Conversation">
+        {(props.conversation.turns ?? []).length === 0 ? (
+          <Notice text="Start by describing what happened, where it happened, and whether anyone is in immediate danger or detention." />
+        ) : (
+          props.conversation.turns?.map((turn) => (
+            <View
+              key={turn.id}
+              style={[
+                styles.chatBubble,
+                turn.actor === "client"
+                  ? styles.chatBubbleClient
+                  : styles.chatBubbleLex,
+              ]}
+            >
+              <Text style={styles.chatActor}>
+                {turn.actor === "client" ? "You" : "Lex AI"}
+              </Text>
+              <Text style={styles.body}>{turn.body}</Text>
+            </View>
+          ))
+        )}
+        <TextInput
+          style={[styles.input, styles.longInput]}
+          multiline
+          value={props.message}
+          onChangeText={props.setMessage}
+          placeholder="Describe the legal issue or answer Lex's question"
+        />
+        <Button
+          label="Send securely"
+          onPress={props.send}
+          busy={props.busy}
+          disabled={!props.message.trim()}
+        />
+        <Button secondary label="Refresh response" onPress={props.refresh} />
+      </Section>
+      {props.conversation.state === "awaiting_confirmation" ? (
+        <Card>
+          <Text style={styles.heading}>Needs your confirmation</Text>
+          <Text style={styles.body}>
+            Inspect the suggested category and organized facts. Confirm only if
+            they reflect what you said; otherwise continue the conversation or
+            challenge the routing.
+          </Text>
+          <Button label="Confirm suggested category" onPress={props.confirm} />
+          <Button
+            secondary
+            label="Challenge this routing"
+            onPress={props.challenge}
+          />
+        </Card>
+      ) : null}
+      {props.conversation.state === "human_review" ? (
+        <Notice text="This enquiry has been routed to restricted human review because you requested it or the issue may be urgent, sensitive or uncertain." />
+      ) : null}
+      <Button
+        secondary
+        label="Request human review"
+        onPress={props.humanReview}
+      />
+      {props.notice ? <Notice text={props.notice} /> : null}
+    </Shell>
+  );
+}
+
+function LegalCentre(props: {
+  documents: LegalDocument[];
+  consents: LegalConsent[];
+  signedIn: boolean;
+  busy: boolean;
+  notice: string;
+  update: (document: LegalDocument, withdraw: boolean) => void;
+  back: () => void;
+}) {
+  const [openDocument, setOpenDocument] = useState<string>();
+  const latestPurpose = (code: string) =>
+    props.consents.filter((event) => event.document_code === code).at(-1);
+  const latest = (id: string) => {
+    const document = props.documents.find((item) => item.version_id === id);
+    const purpose = document && latestPurpose(document.code);
+    return document?.acceptance_kind === "optional_consent" &&
+      purpose?.kind === "withdrawn"
+      ? purpose
+      : props.consents
+          .filter((event) => event.document_version_id === id)
+          .at(-1);
+  };
+  return (
+    <Shell back={props.back} title="Legal centre">
+      <Card dark>
+        <Text style={styles.kickerLight}>LEX LEGAL CENTRE</Text>
+        <Text style={styles.heroLight}>Legal documents and disclosures</Text>
+        <Text style={styles.bodyLight}>
+          Read effective policies and disclosures here. New drafts do not
+          replace the version that applies to your service until publication.
+        </Text>
+      </Card>
+      {!props.documents.length ? (
+        <Notice text="No policies are published in your selected language yet. This private test release is not open for real legal matters." />
+      ) : null}
+      {props.documents.map((document) => (
+        <AccordionSection
+          key={document.version_id}
+          label={document.title}
+          summary={`Version ${document.version} · ${title(document.status)}`}
+          open={openDocument === document.version_id}
+          onToggle={() =>
+            setOpenDocument(
+              openDocument === document.version_id
+                ? undefined
+                : document.version_id,
+            )
+          }
+        >
+          {document.company_placeholder_present ? (
+            <Notice text="Parent-company details and legal approval are still required before production publication." />
+          ) : null}
+          <Text style={styles.legalText}>{document.content_markdown}</Text>
+          {latest(document.version_id) ? (
+            <Text style={styles.meta}>
+              {title(latest(document.version_id)!.kind)} ·{" "}
+              {new Date(
+                latest(document.version_id)!.occurred_at,
+              ).toLocaleDateString()}
+            </Text>
+          ) : null}
+          {props.signedIn &&
+          document.acceptance_kind !== "notice" &&
+          !["accepted", "acknowledged"].includes(
+            latest(document.version_id)?.kind ?? "",
+          ) ? (
+            <Button
+              label={
+                document.acceptance_kind === "acknowledgement"
+                  ? "I acknowledge this notice"
+                  : document.acceptance_kind === "optional_consent"
+                    ? "I consent to this optional processing"
+                    : "I agree to these terms"
+              }
+              busy={props.busy}
+              onPress={() => props.update(document, false)}
+            />
+          ) : null}
+          {document.acceptance_kind === "optional_consent" &&
+          latestPurpose(document.code)?.kind === "accepted" ? (
+            <>
+              <Text style={styles.body}>
+                Withdrawal applies across your account. It does not cancel an
+                engagement or remove its records. Typed intake and in-app access
+                remain available.
+              </Text>
+              <Button
+                secondary
+                label="Withdraw optional consent"
+                busy={props.busy}
+                onPress={() => props.update(document, true)}
+              />
+            </>
+          ) : null}
+        </AccordionSection>
+      ))}
+      {props.notice ? <Notice text={props.notice} /> : null}
     </Shell>
   );
 }
@@ -1252,13 +2390,21 @@ function MatterScreen(props: {
   sendMessage: () => void;
   pay: (provider: "paystack" | "flutterwave") => void;
   matterAction: (kind: "reassignment" | "refund") => void;
+  liveConnected: boolean;
+  scheduleConsultation: () => void;
+  joinConsultation: () => void;
+  engagement: RepresentationEngagement | null;
+  acceptRepresentation: () => void;
+  payInvoice: (invoiceId: string, provider: "paystack" | "flutterwave") => void;
 }) {
   const assessment = props.matter.assessment;
   return (
     <Shell back={props.back} title={props.matter.reference}>
       <Card dark>
         <Text style={styles.kickerLight}>{title(props.matter.state)}</Text>
-        <Text style={styles.heroLight}>Tenancy assessment</Text>
+        <Text style={styles.heroLight}>
+          {title(props.matter.practice_area_code ?? "legal matter")}
+        </Text>
         <Text style={styles.bodyLight}>
           {props.matter.state_code === "LA" ? "Lagos" : props.matter.state_code}{" "}
           · {title(props.matter.urgency)}
@@ -1309,9 +2455,140 @@ function MatterScreen(props: {
           />
         </Section>
       ) : null}
-      {["active", "awaiting_client", "lawyer_review", "delivered"].includes(
-        props.matter.state,
-      ) ? (
+      {props.matter.state === "consultation_scheduled" ? (
+        <Section label="Scheduled in-app consultation">
+          {props.matter.consultation ? (
+            <>
+              <Card>
+                <Text style={styles.strong}>Live text with your lawyer</Text>
+                <Text style={styles.meta}>
+                  {props.matter.consultation.scheduled_start
+                    ? new Date(
+                        props.matter.consultation.scheduled_start,
+                      ).toLocaleString()
+                    : "Time recorded in the shared matter"}
+                </Text>
+              </Card>
+              <Button
+                label={
+                  props.liveConnected
+                    ? "Live consultation connected"
+                    : "Join live text consultation"
+                }
+                onPress={props.joinConsultation}
+                disabled={props.liveConnected}
+              />
+            </>
+          ) : (
+            <Button
+              label="Schedule a one-hour live text consultation"
+              onPress={props.scheduleConsultation}
+            />
+          )}
+          <Notice text="Secure text is coordinated live and saved to the authoritative matter timeline. Native audio and video calls are not included." />
+        </Section>
+      ) : null}
+      {props.matter.state === "consultation_active" &&
+      props.matter.consultation ? (
+        <Section label="Live consultation">
+          <Button
+            label={
+              props.liveConnected
+                ? "Connected — send below"
+                : "Reconnect live consultation"
+            }
+            onPress={props.joinConsultation}
+            disabled={props.liveConnected}
+          />
+        </Section>
+      ) : null}
+      {props.engagement ? (
+        <Section label="Separate representation engagement">
+          <Card>
+            <Text style={styles.strong}>{title(props.engagement.state)}</Text>
+            <Text style={styles.body}>
+              Representation is offered by the identified lawyer or firm under a
+              separate scope, exclusions, responsibilities, fees and
+              cancellation terms.
+            </Text>
+          </Card>
+          {props.engagement.proposals
+            .filter((proposal) => proposal.state === "offered")
+            .map((proposal) => (
+              <Card key={proposal.id}>
+                <Text style={styles.heading}>Proposal to review</Text>
+                <Text style={styles.strong}>Scope</Text>
+                <Text style={styles.body}>{proposal.scope}</Text>
+                <Text style={styles.strong}>Exclusions</Text>
+                <Text style={styles.body}>{proposal.exclusions}</Text>
+                <Text style={styles.strong}>Fees</Text>
+                <Text style={styles.body}>{proposal.fee_summary}</Text>
+                <Text style={styles.strong}>Expected expenses</Text>
+                <Text style={styles.body}>
+                  {proposal.expected_expenses || "None stated"}
+                </Text>
+                <Text style={styles.strong}>Cancellation</Text>
+                <Text style={styles.body}>{proposal.cancellation_terms}</Text>
+                <Text style={styles.strong}>Your responsibilities</Text>
+                <Text style={styles.body}>
+                  {proposal.client_responsibilities}
+                </Text>
+                <Button
+                  label="Accept separate representation proposal"
+                  onPress={props.acceptRepresentation}
+                />
+              </Card>
+            ))}
+          {props.engagement.milestones.map((milestone) => (
+            <Card key={milestone.id}>
+              <Text style={styles.strong}>{milestone.title}</Text>
+              <Text style={styles.meta}>
+                {title(milestone.state)}
+                {milestone.amount_minor
+                  ? ` · ₦${(milestone.amount_minor / 100).toLocaleString()}`
+                  : ""}
+              </Text>
+            </Card>
+          ))}
+          {props.engagement.invoices
+            .filter((invoice) =>
+              ["issued", "payment_pending"].includes(invoice.state),
+            )
+            .map((invoice) => (
+              <Card key={invoice.id}>
+                <Text style={styles.strong}>{invoice.invoice_number}</Text>
+                <Text style={styles.body}>{invoice.description}</Text>
+                <Text style={styles.meta}>
+                  ₦{(invoice.amount_minor / 100).toLocaleString()} ·{" "}
+                  {title(invoice.state)}
+                </Text>
+                {invoice.state === "issued" ? (
+                  <>
+                    <Button
+                      label="Pay invoice with Paystack"
+                      onPress={() => props.payInvoice(invoice.id, "paystack")}
+                    />
+                    <Button
+                      secondary
+                      label="Pay with Flutterwave"
+                      onPress={() =>
+                        props.payInvoice(invoice.id, "flutterwave")
+                      }
+                    />
+                  </>
+                ) : null}
+              </Card>
+            ))}
+          <Notice text="Lex does not hold client money, calculate legal deadlines, file documents, appear in court, or guarantee an outcome. Each provider-verified invoice is separate and audited." />
+        </Section>
+      ) : null}
+      {[
+        "consultation_scheduled",
+        "consultation_active",
+        "awaiting_client",
+        "lawyer_review",
+        "delivered",
+      ].includes(props.matter.state) ? (
         <Section label="Delivery problem">
           <Button
             secondary
@@ -1511,6 +2788,42 @@ function Section({
     </View>
   );
 }
+function AccordionSection({
+  label,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.accordion}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityHint={
+          open ? "Collapses this section" : "Expands this section"
+        }
+        onPress={onToggle}
+        style={styles.accordionHeader}
+      >
+        <View style={styles.grow}>
+          <Text style={styles.kicker}>{label.toUpperCase()}</Text>
+          <Text style={styles.accordionSummary} numberOfLines={2}>
+            {summary}
+          </Text>
+        </View>
+        <Text style={styles.accordionChevron}>{open ? "⌃" : "⌄"}</Text>
+      </Pressable>
+      {open ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
 function Card({
   children,
   dark,
@@ -1554,6 +2867,7 @@ function Button({
   secondary,
   danger,
   light,
+  outlineLight,
   small,
 }: {
   label: string;
@@ -1563,6 +2877,7 @@ function Button({
   secondary?: boolean;
   danger?: boolean;
   light?: boolean;
+  outlineLight?: boolean;
   small?: boolean;
 }) {
   return (
@@ -1574,6 +2889,7 @@ function Button({
         secondary && styles.buttonSecondary,
         danger && styles.buttonDanger,
         light && styles.buttonLight,
+        outlineLight && styles.buttonOutlineLight,
         small && styles.buttonSmall,
         (busy || disabled) && styles.disabled,
       ]}
@@ -1755,6 +3071,30 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" },
   wrap: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
+  catalog: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
+  searchRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  searchInput: { flex: 1, minWidth: 0 },
+  catalogTrigger: {
+    minHeight: 48,
+    paddingHorizontal: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#1e6248",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f3f8f4",
+  },
+  catalogTriggerText: { color: "#123c2d", fontSize: 12, fontWeight: "800" },
+  catalogBranches: { gap: 7 },
+  branchHeader: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#eef1ec",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   between: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1762,6 +3102,24 @@ const styles = StyleSheet.create({
   },
   grow: { flex: 1 },
   section: { gap: 10, marginTop: 14 },
+  accordion: {
+    borderWidth: 1,
+    borderColor: "#d8dbd5",
+    borderRadius: 16,
+    backgroundColor: "#fffefa",
+    overflow: "hidden",
+  },
+  accordionHeader: {
+    minHeight: 68,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  accordionSummary: { color: "#17241d", fontSize: 14, fontWeight: "700" },
+  accordionChevron: { color: "#1e6248", fontSize: 24, fontWeight: "700" },
+  accordionBody: { padding: 16, paddingTop: 4, gap: 10 },
   question: { gap: 8, marginBottom: 10 },
   chip: {
     paddingVertical: 9,
@@ -1791,6 +3149,11 @@ const styles = StyleSheet.create({
   },
   buttonDanger: { backgroundColor: "#8a4b40" },
   buttonLight: { backgroundColor: "#e5f0e8" },
+  buttonOutlineLight: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#e5f0e8",
+  },
   buttonSmall: {
     minHeight: 38,
     paddingHorizontal: 12,
@@ -1810,6 +3173,27 @@ const styles = StyleSheet.create({
   },
   strong: { color: "#17241d", fontWeight: "800", fontSize: 13, lineHeight: 19 },
   meta: { color: "#77827b", fontSize: 11, lineHeight: 17 },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  statusPill: {
+    color: "#123c2d",
+    backgroundColor: "#e5f0e8",
+    borderRadius: 99,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  chatBubble: { borderRadius: 14, padding: 13, gap: 5, maxWidth: "92%" },
+  chatBubbleClient: { backgroundColor: "#e5f0e8", alignSelf: "flex-end" },
+  chatBubbleLex: { backgroundColor: "#fff5dc", alignSelf: "flex-start" },
+  chatActor: { color: "#a66a25", fontSize: 10, fontWeight: "800" },
+  longInput: { minHeight: 100, textAlignVertical: "top" },
+  legalText: { color: "#34453c", fontSize: 13, lineHeight: 21 },
   arrow: { color: "#89938c", fontSize: 28 },
   danger: {
     color: "#8a4b40",

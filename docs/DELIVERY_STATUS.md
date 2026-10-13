@@ -1,26 +1,59 @@
-# Delivery Status
+# Nationwide Test-Release Delivery Status
 
-Allowed statuses: `not_started`, `implemented_unverified`, `local_verified`, `provider_verified`, `legal_approved`, and `pilot_ready`.
+## 2026-10-13 production preparation (in progress)
 
-| Capability                             | Status                 | Evidence / next gate                                                                                                 |
-| -------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare documentation baseline      | provider_verified      | Isolated resources and live URLs are recorded; no pre-existing resource was reused                                   |
-| Worker API runtime                     | provider_verified      | Live health/OpenAPI, generated types, integration tests, dry-run, and deployment passed                              |
-| D1 schema and migrations               | provider_verified      | Two migrations plus synthetic seed applied locally and to new EU `lex-staging-db`                                    |
-| Private R2 evidence                    | local_verified         | New private EU bucket is bound; local matter authorization tests pass; remote object test is pending                 |
-| Queues, job ledger, retries, DLQ, Cron | provider_verified      | New queues, consumers, DLQ, and five-minute Cron are deployed; remote failure drill is pending                       |
-| Android client                         | provider_verified      | Fresh Gradle APK installed, launched, and completed controlled client login on device `R3CW70E87KD`                  |
-| Controlled staging client login        | provider_verified      | Exact synthetic number and server-held OTP complete a live Worker client session; other numbers remain unavailable   |
-| Country calling-code selector          | local_verified         | Sign-in defaults to Nigeria and offers ten country/calling-code choices without changing the server E.164 contract   |
-| English/Pidgin questionnaires          | local_verified         | Versioned tenant/landlord questionnaires render in the device build; legal-language review remains pending           |
-| Voice transcription confirmation       | implemented_unverified | OpenAI secret is configured on both staging Workers; provider call awaits account credit and end-to-end verification |
-| WhatsApp OTP                           | implemented_unverified | Local behavior exists; real Meta template delivery not verified                                                      |
-| Full WhatsApp conversational intake    | not_started            | Deferred roadmap item, not a pilot acceptance requirement                                                            |
-| Lawyer workspace                       | local_verified         | Static production build and live deployment pass; provider-backed full journey remains pending                       |
-| Operations workspace                   | local_verified         | Static production build and live deployment pass; provider-backed full journey remains pending                       |
-| Paystack/Flutterwave                   | implemented_unverified | Adapters and local tests exist; sandbox provider evidence required                                                   |
-| AI safety boundary                     | local_verified         | Contracts prohibit autonomous legal delivery; evaluation set still required                                          |
-| Legal content                          | implemented_unverified | Seed content is test-only; lawyer-co-founder approval required                                                       |
-| Physical staging journey               | provider_verified      | Staging APK completed live Worker client login on a physical device; real WhatsApp/payment/AI remains gated          |
+The approved update is recorded in the existing MVP plan. Earlier evidence below is historical, not current provider or production verification. Corporate roles and current registration details have been owner-confirmed. Icon 2, conversation/scales, is integrated in source. Twenty substantive documents and the version-bound, MFA-protected Owner review UI/API are implemented; public policies remain separated from unapproved drafts. Private invitation handoff works independently of email. Resend is now selected; its adapter is locally tested but Lex-specific credentials and dedicated sender verification remain pending. An earlier Postmark test was API-accepted then DMARC-rejected; no partner invitation has been sent. Store signing inputs are prepared, not supplied.
 
-Update a row only when its stated evidence exists. `pilot_ready` requires all technical, provider, device, privacy, and legal gates applicable to that capability.
+The continuation now runs a first Node/Hono/PostgreSQL slice in an isolated local Docker deployment. It serves catalogue/public-policy reads and explicitly reports that it is not ready for cutover. Cloudflare remains the working app backend. Mobile/web consent controls and AI/notification withdrawal enforcement are implemented; required agreement entry points and device/provider verification remain unfinished. See TEST_REPORT for exact deployment evidence; this increment is not public-release approval.
+
+| Current continuation | Status | Evidence / remaining work |
+| --- | --- | --- |
+| Runtime-neutral catalogue/public-policy services | local_verified | D1/PostgreSQL adapters, 4 shared/Node tests and API regression tests |
+| New `lex-docker` production-build images | local_verified | Loopback API, private PostgreSQL network, secret files, non-root/read-only API; no client cutover |
+| PostgreSQL migration and immutable public content | local_verified | Checksummed transactional migration; 9 real-PostgreSQL contract checks with rolled-back fixtures |
+| Encrypted PostgreSQL backup/isolated restore | local_verified | AES-GCM authentication, retained isolated restore and count receipt; empty foundation only |
+| Full Docker behavior / D1-R2 migration | not_started beyond first slice | Auth, matters, payments, queue/storage/realtime port, full graph import and rollback still required |
+| Consent UI and account-wide optional withdrawal | local_verified | Explicit Ask Lex choice, public mobile policies, web/mobile decisions, cross-channel/version tests and queued fallback |
+| Mandatory service/representation acceptances | implemented_unverified | Ledger exists; integration into every required entry point remains unfinished |
+| Resend email adapter | local_verified | Stable retry key, escaped HTML/plain text, acceptance validation and explicit provider selection; no actual Resend send yet |
+| Queue claim/retry protection | local_verified | Atomic claims, fenced completion, expired lease recovery and bounded attempts; physical DLQ/realtime/provider reconciliation drills remain pending |
+| Actual provider / partner / store completion | incomplete | Postmark test rejected by DMARC; Resend pending. No partner approval, signing or store upload |
+
+## 2026-08-11 experience increment
+
+- Implemented and deployed: additive multi-role schema and legacy backfill, rotating active-role sessions, protected founder bootstrap, professional application/evidence workflows, two-owner approval records, Legal Centre versioning, Ask Lex conversations and AI queue work, Owner provider/AI diagnostics, progressive mobile accordions, grouped catalogue, responsive web role switching, and iOS/TestFlight guards.
+- OpenAI: a real synthetic guided-intake run completed through the deployed Queue consumer using `gpt-5.6-terra`; model, prompt/schema versions, latency and token use are recorded. Transcription remains independently unverified.
+- Founder records: both authorized staging accounts are bootstrapped with the requested assigned roles and preverified contact timestamps. Founder-authorized numbers can use the controlled staging OTP while Meta is unavailable; the primary founder's real-number smoke entered Client with assigned Client/Owner roles. Contact details remain encrypted/hashed and uncommitted. MFA enrollment is still required before privileged access.
+- Legal text: the controlled drafting pack is in `docs/LEGAL_CENTRE_DRAFTS.md`; production remains blocked pending company details and lawyer-co-founder review.
+- iOS: source and validation are prepared; no TestFlight upload or App Store record action is authorized.
+
+Statuses: `not_started`, `implemented_unverified`, `local_verified`, `provider_verified`, `legal_approved`, `pilot_ready`.
+
+| Capability                                        | Status                 | Evidence or remaining gate                                                                                                 |
+| ------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Full-spectrum product contract                    | local_verified         | README, context, MVP plan and decision register describe nationwide managed legal access; tenancy is one module            |
+| Searchable legal catalogue                        | local_verified         | 52 practice-area records, grouped search API, mobile search and service definitions                                        |
+| Portable D1 schema and tenancy backfill           | provider_verified      | Migrations 0003 and additive 0004 apply from empty and are live on isolated EU D1; pre-0004 Time Travel bookmark recorded  |
+| Multi-role accounts and founder bootstrap         | provider_verified      | Requested Client/Owner and Owner/Lawyer assignments confirmed remotely; public role assignment remains server-controlled   |
+| Professional onboarding and verification          | local_verified         | Complete application, quarantined credential evidence, recorded review, role grant and disabled-by-default visibility      |
+| Privileged dual control                           | local_verified         | Recent MFA step-up and a distinct second owner are required to approve recorded sensitive-action requests                  |
+| Nationwide adult intake                           | local_verified         | All 36 states and FCT use active synthetic service coverage and general/category addenda                                   |
+| Minor/guardian safeguards                         | local_verified         | Minimal profile, guardian evidence/review, detailed-data gate and restricted safeguarding ledger implemented               |
+| Organization authority safeguards                 | local_verified         | Organization, membership, evidence/review and pre-sharing gate implemented                                                 |
+| Nationwide verified-lawyer matching               | local_verified         | Practice, state, language, licence, availability, urgency and workload filters; operations-assistance fallback             |
+| Consultation scheduling/live text                 | local_verified         | D1-authoritative messages plus new Durable Object Worker, short-lived tokens and reconnecting app/workspace clients        |
+| Ask Lex guided intake                             | provider_verified      | Real synthetic Responses API run completed and stored with strict schema, safety boundary, usage and human-review state    |
+| Voice notes/transcription                         | implemented_unverified | Upload/transcription/confirmation code exists; a real `gpt-4o-transcribe` provider run remains pending                     |
+| Lawyer assessment                                 | local_verified         | Only the assigned lawyer can attest and deliver; AI cannot mark work lawyer-reviewed                                       |
+| Representation engagements                        | local_verified         | Separate proposals, consent, conflict reconfirmation, milestones, tasks, lawyer-confirmed deadlines, invoices and disputes |
+| Paystack/Flutterwave initial and invoice payments | implemented_unverified | Direct split snapshots, invoice allocation and reconciliation code compile; sandbox credentials and provider tests pending |
+| Refunds/chargebacks                               | implemented_unverified | Full/partial refund request and audited dispute states exist; provider processing tests remain pending                     |
+| Typed WhatsApp intake/linking                     | implemented_unverified | AI-guided/fallback state machine, commands and phone-linked continuity compile; Meta test credentials remain pending       |
+| WhatsApp media/voice retrieval                    | not_started            | Webhook contracts identify media, but authenticated retrieval, R2 persistence and provider tests remain required           |
+| Email and push                                    | implemented_unverified | Postmark and Expo delivery adapters are capability-gated; credentials and provider tests pending                           |
+| Mobile client                                     | provider_verified      | Gradle APK 0.3.0 is staging-connected, installed, cold-launched and visually inspected on Android device `R3CW70E87KD`     |
+| Lawyer/operations web workspace                   | local_verified         | General applications, matter work, consultation, representation, matching, safeguarding and authority controls type-check  |
+| Cloudflare staging deployment                     | provider_verified      | API `5ee727df`, jobs `b9091ce7`, web `32bacb02`; same-origin API proxy and interactive web checks pass                     |
+| Legal/native-language approvals                   | not_started            | Test content is synthetic; recorded lawyer-co-founder and native-language/privacy approval required                        |
+
+No row may become `provider_verified`, `legal_approved`, or `pilot_ready` without saved evidence for that exact gate.

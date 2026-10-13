@@ -1,0 +1,27 @@
+{
+  "name": "@lex/node-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.mjs",
+    "migrate": "node dist/migrate.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:postgres": "node dist/postgres-test.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@lex/platform-core": "workspace:*",
+    "hono": "^4.10.4",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "esbuild": "^0.25.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

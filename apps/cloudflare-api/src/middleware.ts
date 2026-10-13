@@ -39,7 +39,7 @@ export const corsGuard: MiddlewareHandler<{
     context.header("vary", "Origin");
     context.header(
       "access-control-allow-headers",
-      "Authorization, Content-Type, X-Device-Id, X-File-Name, X-File-Sha256, Idempotency-Key",
+      "Authorization, Content-Type, X-Device-Id, X-File-Name, X-File-Sha256, X-Credential-Type, Idempotency-Key",
     );
     context.header(
       "access-control-allow-methods",
@@ -68,11 +68,14 @@ export const requireAuth: MiddlewareHandler<{
 };
 
 export function requireRole(
-  ...roles: Variables["user"]["role"][]
+  ...roles: Array<Variables["user"]["role"] | "admin" | "super_admin">
 ): MiddlewareHandler<{ Bindings: Env; Variables: Variables }> {
   return async (context, next) => {
     const user = context.get("user");
-    if (!roles.includes(user.role))
+    const accepted = roles.map((role) =>
+      role === "admin" ? "operations" : role === "super_admin" ? "owner" : role,
+    );
+    if (!accepted.includes(user.role))
       return context.json(
         { message: "You do not have permission for this action" },
         403,
@@ -86,7 +89,7 @@ export async function canAccessMatter(
   matterId: string,
 ): Promise<boolean> {
   const user = context.get("user");
-  if (user.role === "admin" || user.role === "super_admin") return true;
+  if (user.role === "operations" || user.role === "owner") return true;
   if (user.role === "client") {
     return Boolean(
       await context.env.DB.prepare(

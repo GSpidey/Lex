@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { optionalProcessingAllowed } from "@lex/d1";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import {
@@ -11,7 +12,10 @@ import {
 } from "@lex/contracts";
 import {
   NIGERIA_STATES,
+  PRACTICE_AREAS,
   calculateUrgency,
+  classifyUrgency,
+  serviceForPracticeArea,
   workflowFor,
 } from "@lex/jurisdictions";
 import {
@@ -27,8 +31,8 @@ import type { Env, Variables } from "./types.js";
 const routes = new Hono<{ Bindings: Env; Variables: Variables }>();
 routes.use("/*", requireAuth);
 
-const pilotLanguage = z.enum(["en", "pcm"]);
-const intakeCreate = createIntakeSchema.extend({ language: pilotLanguage });
+const pilotLanguage = z.enum(["en", "pcm", "ha", "yo", "ig"]);
+const intakeCreate = createIntakeSchema;
 const confirmSchema = z.object({
   summaryConfirmed: z.literal(true),
   consentAccepted: z.literal(true),
@@ -122,10 +126,11 @@ function workflowView(role: "tenant" | "landlord", language: "en" | "pcm") {
 routes.get("/capabilities", (context) =>
   context.json({
     environment: context.env.APP_ENV,
-    pilot: {
+    release: {
       country: "NG",
-      activeState: "LA",
-      languages: ["en", "pcm"],
+      activeStates: NIGERIA_STATES.map(([code]) => code),
+      practiceAreaCount: PRACTICE_AREAS.length,
+      languages: ["en", "pcm", "ha", "yo", "ig"],
       androidFirst: true,
     },
     providers: {
@@ -146,22 +151,30 @@ routes.get("/capabilities", (context) =>
         ? "configured_unverified"
         : "unconfigured",
       email:
-        context.env.EMAIL_DELIVERY_ENABLED === "true"
+        context.env.EMAIL_PROVIDER_STATUS ??
+        (context.env.EMAIL_DELIVERY_ENABLED === "true"
           ? "configured_unverified"
-          : "unavailable_free_staging",
+          : "unconfigured"),
     },
-    whatsappScope: [
+    whatsappImplemented: [
       "otp",
       "status",
       "information_request",
       "assessment_ready_link",
+      "typed_intake",
+      "app_linking",
     ],
-    deferred: [
-      "full_whatsapp_intake",
-      "hausa",
-      "yoruba",
-      "igbo",
-      "ios_distribution",
+    whatsappPendingProviderValidation: [
+      "media_retrieval",
+      "voice_note_transcription",
+    ],
+    providerVerificationPending: [
+      "whatsapp",
+      "openai",
+      "paystack",
+      "flutterwave",
+      context.env.EMAIL_PROVIDER ?? "postmark",
+      "push",
     ],
   }),
 );
@@ -171,7 +184,7 @@ routes.get("/workflows/:role", (context) => {
   const language = pilotLanguage
     .catch("en")
     .parse(context.req.query("language"));
-  return context.json(workflowView(role, language));
+  return context.json(workflowView(role, language === "pcm" ? "pcm" : "en"));
 });
 
 routes.post("/intakes", zValidator("json", intakeCreate), async (context) => {
@@ -187,18 +200,36 @@ routes.post("/intakes", zValidator("json", intakeCreate), async (context) => {
     return context.json({ message: "Unknown Nigerian state" }, 422);
   const id = crypto.randomUUID();
   const timestamp = now();
+  const practiceAreaCode = input.practiceAreaCode;
+  if (!PRACTICE_AREAS.some((area) => area.code === practiceAreaCode))
+    return context.json({ message: "Unknown practice area" }, 422);
+  const service = serviceForPracticeArea(practiceAreaCode);
+  const tenancyRole =
+    input.tenancyRole ??
+    (input.issueRole === "landlord" ? "landlord" : "tenant");
   const workflowId =
-    input.tenancyRole === "tenant"
+    practiceAreaCode === "tenancy" && input.tenancyRole === "tenant"
       ? "workflow-ng-la-tenant-v1"
-      : "workflow-ng-la-landlord-v1";
+      : practiceAreaCode === "tenancy" && input.tenancyRole === "landlord"
+        ? "workflow-ng-la-landlord-v1"
+        : `workflow-compat-${service.code}-v1`;
   await context.env.DB.batch([
     context.env.DB.prepare(
-      "INSERT INTO intakes (id,client_user_id,language,tenancy_role,country_code,state_code,source_channel,workflow_id,state,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?, 'draft',1,?,?)",
+      "INSERT INTO intakes (id,client_user_id,language,language_v2,tenancy_role,client_type,client_subject_id,practice_area_code,service_version_id,issue_role,classification_status,country_code,state_code,source_channel,workflow_id,state,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'draft',1,?,?)",
     ).bind(
       id,
       user.id,
+      input.language === "en" || input.language === "pcm"
+        ? input.language
+        : "en",
       input.language,
-      input.tenancyRole,
+      tenancyRole,
+      input.clientType,
+      input.clientSubjectId ?? null,
+      practiceAreaCode,
+      input.serviceVersionId ?? service.id,
+      input.issueRole ?? input.tenancyRole ?? null,
+      input.classificationStatus,
       "NG",
       state,
       input.sourceChannel,
@@ -214,7 +245,11 @@ routes.post("/intakes", zValidator("json", intakeCreate), async (context) => {
       "intake.created",
       "Intake",
       id,
-      JSON.stringify({ stateCode: state, tenancyRole: input.tenancyRole }),
+      JSON.stringify({
+        stateCode: state,
+        practiceAreaCode,
+        clientType: input.clientType,
+      }),
       context.get("requestId"),
       timestamp,
     ),
@@ -223,8 +258,15 @@ routes.post("/intakes", zValidator("json", intakeCreate), async (context) => {
     {
       id,
       state: "draft",
-      jurisdictionStatus: state === "LA" ? "active" : "intake_only",
-      workflow: workflowView(input.tenancyRole, input.language),
+      jurisdictionStatus: "active",
+      service,
+      workflow:
+        practiceAreaCode === "tenancy" && input.tenancyRole
+          ? workflowView(
+              input.tenancyRole,
+              input.language === "pcm" ? "pcm" : "en",
+            )
+          : service,
       version: 1,
     },
     201,
@@ -266,11 +308,23 @@ routes.patch(
     const user = context.get("user");
     const timestamp = now();
     const intake = await context.env.DB.prepare(
-      "SELECT state,version FROM intakes WHERE id=? AND client_user_id=?",
+      "SELECT state,version,client_type,client_subject_id FROM intakes WHERE id=? AND client_user_id=?",
     )
       .bind(id, user.id)
-      .first<{ state: string; version: number }>();
+      .first<{
+        state: string;
+        version: number;
+        client_type: string;
+        client_subject_id: string | null;
+      }>();
     if (!intake) return context.json({ message: "Intake not found" }, 404);
+    const contextGate = await clientContextGate(
+      context.env,
+      user.id,
+      intake.client_type,
+      intake.client_subject_id,
+    );
+    if (contextGate) return context.json({ message: contextGate }, 403);
     if (!["draft", "awaiting_confirmation"].includes(intake.state))
       return context.json(
         { message: "Submitted intake cannot be edited" },
@@ -318,10 +372,21 @@ routes.post("/intakes/:id/summarize", async (context) => {
       narrative: string | null;
       desired_outcome: string | null;
       language: "en" | "pcm";
+      language_v2: "en" | "pcm" | "ha" | "yo" | "ig" | null;
       tenancy_role: "tenant" | "landlord";
+      practice_area_code: string | null;
+      client_type: "adult_individual" | "minor" | "organization";
+      client_subject_id: string | null;
       version: number;
     }>();
   if (!intake) return context.json({ message: "Intake not found" }, 404);
+  const contextGate = await clientContextGate(
+    context.env,
+    user.id,
+    intake.client_type,
+    intake.client_subject_id,
+  );
+  if (contextGate) return context.json({ message: contextGate }, 403);
   const answersResult = await context.env.DB.prepare(
     "SELECT question_key,value_json FROM intake_answers WHERE intake_id=?",
   )
@@ -333,19 +398,35 @@ routes.post("/intakes/:id/summarize", async (context) => {
       JSON.parse(item.value_json),
     ]),
   );
-  const workflow = workflowFor(intake.tenancy_role);
-  const missing = workflow.questions
+  const practiceAreaCode = intake.practice_area_code ?? "tenancy";
+  const service = serviceForPracticeArea(practiceAreaCode);
+  const questions =
+    practiceAreaCode === "tenancy"
+      ? workflowFor(intake.tenancy_role).questions
+      : service.questions;
+  const missing = questions
     .filter(
       (question) => question.required && answers[question.key] === undefined,
     )
     .map((question) => question.label);
-  const urgency = calculateUrgency(intake.tenancy_role, answers);
+  const urgency =
+    practiceAreaCode === "tenancy"
+      ? calculateUrgency(intake.tenancy_role, answers)
+      : classifyUrgency(practiceAreaCode, answers);
+  const originalLanguage = intake.language_v2 ?? intake.language;
+  const confirmationByLanguage = {
+    en: "Review this English record carefully and correct anything inaccurate before it is shared with a lawyer.",
+    pcm: "Check this English record well. Correct anything wey no correct before lawyer see am.",
+    ha: "Duba wannan bayanin Turanci sosai, sannan ka gyara duk abin da bai dace ba kafin a tura wa lauya.",
+    yo: "Ṣàyẹ̀wò àkọsílẹ̀ Gẹ̀ẹ́sì yìí dáadáa, kí o sì ṣàtúnṣe ohun tí kò tọ́ kí a tó fi ránṣẹ́ sí agbẹjọ́rò.",
+    ig: "Nyochaa ndekọ Bekee a nke ọma ma dozie ihe ọ bụla na-ezighi ezi tupu ekerịta ya na ọka iwu.",
+  } as const;
   const summary = {
     authoritativeLanguage: "en",
-    originalLanguage: intake.language,
+    originalLanguage,
     summary:
       intake.narrative?.trim() ||
-      `The client completed the ${intake.tenancy_role} tenancy questionnaire and requested a lawyer-reviewed assessment.`,
+      `The ${intake.client_type.replaceAll("_", " ")} client completed the ${practiceAreaCode.replaceAll("-", " ")} questionnaire and requested a lawyer consultation and assessment.`,
     facts: Object.entries(answers)
       .map(
         ([key, value]) =>
@@ -357,15 +438,12 @@ routes.post("/intakes/:id/summarize", async (context) => {
     issueTags: [],
     missingInformation: missing,
     urgency,
-    urgencyReasons: workflow.urgentAnswerKeys.filter(
+    urgencyReasons: service.urgentAnswerKeys.filter(
       (key) => answers[key] === true,
     ),
     confidence: 0,
     requiresHumanReview: true,
-    safeClientConfirmation:
-      intake.language === "pcm"
-        ? "Check this summary well. Correct anything wey no correct before lawyer see am."
-        : "Review this summary carefully and correct anything inaccurate before it is shared with a lawyer.",
+    safeClientConfirmation: confirmationByLanguage[originalLanguage],
     source: "client_confirmed_structuring",
   };
   const timestamp = now();
@@ -380,7 +458,14 @@ routes.post("/intakes/:id/summarize", async (context) => {
       intake.version,
     )
     .run();
-  if (context.env.OPENAI_API_KEY)
+  if (
+    context.env.OPENAI_API_KEY &&
+    (await optionalProcessingAllowed(
+      context.env.DB,
+      user.id,
+      "ai-routing-disclosure",
+    ))
+  )
     await recordJobBeforePublish(context.env, {
       kind: "ai_intake_extraction",
       queueName: "jobs",
@@ -469,6 +554,11 @@ routes.post("/intakes/:id/submit", async (context) => {
       state_code: string;
       workflow_id: string;
       tenancy_role: "tenant" | "landlord";
+      practice_area_code: string | null;
+      service_version_id: string | null;
+      client_type: "adult_individual" | "minor" | "organization";
+      client_subject_id: string | null;
+      language_v2: string | null;
       version: number;
     }>();
   if (!intake) return context.json({ message: "Intake not found" }, 404);
@@ -487,18 +577,51 @@ routes.post("/intakes/:id/submit", async (context) => {
   const answerKeys = new Set(
     answersResult.results.map((item) => item.question_key),
   );
-  const missing = workflowFor(intake.tenancy_role)
-    .questions.filter(
-      (question) => question.required && !answerKeys.has(question.key),
-    )
+  const practiceAreaCode = intake.practice_area_code ?? "tenancy";
+  const service = serviceForPracticeArea(practiceAreaCode);
+  const questions =
+    practiceAreaCode === "tenancy"
+      ? workflowFor(intake.tenancy_role).questions
+      : service.questions;
+  const missing = questions
+    .filter((question) => question.required && !answerKeys.has(question.key))
     .map((question) => question.key);
   if (missing.length)
     return context.json(
       { message: "Required questionnaire answers are missing", missing },
       422,
     );
+  if (intake.client_type === "minor") {
+    const guardian = await context.env.DB.prepare(
+      "SELECT 1 FROM minor_profiles mp JOIN guardian_links gl ON gl.minor_profile_id=mp.id WHERE mp.id=? AND mp.user_id=? AND mp.status='guardian_verified' AND gl.status='verified'",
+    )
+      .bind(intake.client_subject_id, user.id)
+      .first();
+    if (!guardian)
+      return context.json(
+        {
+          message:
+            "Verified guardian consent is required before detailed submission",
+        },
+        403,
+      );
+  }
+  if (intake.client_type === "organization") {
+    const authority = await context.env.DB.prepare(
+      "SELECT 1 FROM organizations o JOIN organization_memberships om ON om.organization_id=o.id WHERE o.id=? AND om.user_id=? AND o.status='active' AND om.status='approved'",
+    )
+      .bind(intake.client_subject_id, user.id)
+      .first();
+    if (!authority)
+      return context.json(
+        {
+          message:
+            "Approved organization authority is required before submission",
+        },
+        403,
+      );
+  }
   const matterId = crypto.randomUUID();
-  const matterState = intake.state_code === "LA" ? "matching" : "intake_only";
   const reference = `LEX-${new Date().getUTCFullYear()}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   const answers = Object.fromEntries(
     answersResult.results.map((item) => [
@@ -506,19 +629,45 @@ routes.post("/intakes/:id/submit", async (context) => {
       JSON.parse(item.value_json),
     ]),
   );
-  const urgency = calculateUrgency(intake.tenancy_role, answers);
-  await context.env.DB.batch([
+  const urgency =
+    practiceAreaCode === "tenancy"
+      ? calculateUrgency(intake.tenancy_role, answers)
+      : classifyUrgency(practiceAreaCode, answers);
+  const eligible = await context.env.DB.prepare(
+    `SELECT COUNT(*) count FROM lawyer_profiles l WHERE l.verification_status='verified' AND l.available=1
+     AND (l.verification_expires_at IS NULL OR l.verification_expires_at>?)
+     AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='state' AND c.value=?)
+     AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='practice_area' AND c.value=?)
+     AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='language' AND c.value=?)`,
+  )
+    .bind(
+      timestamp,
+      intake.state_code,
+      practiceAreaCode,
+      intake.language_v2 ?? "en",
+    )
+    .first<{ count: number }>();
+  const matterState =
+    urgency !== "standard"
+      ? "urgent_operations_review"
+      : (eligible?.count ?? 0) > 0
+        ? "matching"
+        : "matching_assistance";
+  const statements: D1PreparedStatement[] = [
     context.env.DB.prepare(
       "UPDATE intakes SET state='submitted',submitted_at=?,version=version+1,updated_at=? WHERE id=? AND submitted_at IS NULL",
     ).bind(timestamp, timestamp, id),
     context.env.DB.prepare(
-      "INSERT INTO matters (id,reference,client_user_id,intake_id,workflow_id,country_code,state_code,state,urgency,version,created_at,updated_at) VALUES (?,?,?,?,?,'NG',?,?,?,1,?,?)",
+      "INSERT INTO matters (id,reference,client_user_id,intake_id,workflow_id,service_version_id,client_type,client_subject_id,country_code,state_code,state,urgency,version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,'NG',?,?,?,1,?,?)",
     ).bind(
       matterId,
       reference,
       user.id,
       id,
       intake.workflow_id,
+      intake.service_version_id ?? service.id,
+      intake.client_type,
+      intake.client_subject_id,
       intake.state_code,
       matterState,
       urgency,
@@ -538,7 +687,22 @@ routes.post("/intakes/:id/submit", async (context) => {
       context.get("requestId"),
       timestamp,
     ),
-  ]);
+  ];
+  if (matterState === "matching_assistance")
+    statements.push(
+      context.env.DB.prepare(
+        "INSERT INTO operations_matching_requests (id,matter_id,practice_area_code,state_code,urgency,state,version,created_at,updated_at) VALUES (?,?,?,?,?,'open',1,?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        matterId,
+        practiceAreaCode,
+        intake.state_code,
+        urgency,
+        timestamp,
+        timestamp,
+      ),
+    );
+  await context.env.DB.batch(statements);
   if (urgency !== "standard")
     await recordJobBeforePublish(context.env, {
       kind: "urgent_matter_alert",
@@ -552,7 +716,9 @@ routes.post("/intakes/:id/submit", async (context) => {
       reference,
       state: matterState,
       urgency,
-      serviceAvailable: intake.state_code === "LA",
+      serviceAvailable: true,
+      operationsReviewRequired: matterState === "urgent_operations_review",
+      matchingAssistanceRequired: matterState === "matching_assistance",
     },
     201,
   );
@@ -575,6 +741,21 @@ routes.post(
       .first();
     if (!evidence)
       return context.json({ message: "Audio evidence not found" }, 404);
+    if (
+      !(await optionalProcessingAllowed(
+        context.env.DB,
+        user.id,
+        "ai-routing-disclosure",
+      ))
+    )
+      return context.json(
+        {
+          code: "AI_CONSENT_WITHDRAWN",
+          message:
+            "AI processing is turned off. Type your information instead, or review your choice in the Legal Centre.",
+        },
+        409,
+      );
     if (!context.env.OPENAI_API_KEY)
       return context.json(
         {
@@ -668,11 +849,15 @@ routes.get("/matters", async (context) => {
   const user = context.get("user");
   const query =
     user.role === "client"
-      ? "SELECT * FROM matters WHERE client_user_id=? ORDER BY created_at DESC"
+      ? "SELECT m.*,i.practice_area_code,i.client_type FROM matters m JOIN intakes i ON i.id=m.intake_id WHERE m.client_user_id=? ORDER BY m.created_at DESC"
       : user.role === "lawyer"
-        ? "SELECT m.* FROM matters m JOIN lawyer_profiles l ON l.id=m.selected_lawyer_id WHERE l.user_id=? ORDER BY m.created_at DESC"
-        : "SELECT * FROM matters ORDER BY created_at DESC LIMIT 200";
-  const result = await context.env.DB.prepare(query).bind(user.id).all();
+        ? "SELECT m.*,i.practice_area_code,i.client_type FROM matters m JOIN intakes i ON i.id=m.intake_id JOIN lawyer_profiles l ON l.id=m.selected_lawyer_id WHERE l.user_id=? ORDER BY m.created_at DESC"
+        : "SELECT m.*,i.practice_area_code,i.client_type FROM matters m JOIN intakes i ON i.id=m.intake_id ORDER BY m.created_at DESC LIMIT 200";
+  const statement = context.env.DB.prepare(query);
+  const result =
+    user.role === "operations" || user.role === "owner"
+      ? await statement.all()
+      : await statement.bind(user.id).all();
   return context.json(result.results);
 });
 
@@ -681,12 +866,12 @@ routes.get("/matters/:id", async (context) => {
   if (!(await canAccessMatter(context, id)))
     return context.json({ message: "Matter not found" }, 404);
   const matter = await context.env.DB.prepare(
-    "SELECT m.*,i.structured_summary_json,i.language,i.tenancy_role FROM matters m JOIN intakes i ON i.id=m.intake_id WHERE m.id=?",
+    "SELECT m.*,i.structured_summary_json,COALESCE(i.language_v2,i.language) language,i.tenancy_role,i.practice_area_code,i.client_type FROM matters m JOIN intakes i ON i.id=m.intake_id WHERE m.id=?",
   )
     .bind(id)
     .first<Record<string, unknown>>();
   if (!matter) return context.json({ message: "Matter not found" }, 404);
-  const [messages, evidence, assessment] = await Promise.all([
+  const [messages, evidence, assessment, consultation] = await Promise.all([
     context.env.DB.prepare(
       "SELECT id,sender_user_id,channel,body,message_type,created_at FROM messages WHERE matter_id=? ORDER BY created_at",
     )
@@ -702,6 +887,11 @@ routes.get("/matters/:id", async (context) => {
     )
       .bind(id)
       .first(),
+    context.env.DB.prepare(
+      "SELECT id,state,mode,scheduled_start,scheduled_end,time_zone,started_at,ended_at,version FROM consultations WHERE matter_id=?",
+    )
+      .bind(id)
+      .first(),
   ]);
   return context.json({
     ...matter,
@@ -711,6 +901,7 @@ routes.get("/matters/:id", async (context) => {
     messages: messages.results,
     evidence: evidence.results,
     assessment,
+    consultation,
   });
 });
 
@@ -818,11 +1009,17 @@ routes.get("/matches/:matterId", async (context) => {
   if (!(await canAccessMatter(context, matterId)))
     return context.json({ message: "Matter not found" }, 404);
   const matter = await context.env.DB.prepare(
-    "SELECT state,urgency,state_code FROM matters WHERE id=? AND client_user_id=?",
+    "SELECT m.state,m.urgency,m.state_code,i.practice_area_code,COALESCE(i.language_v2,i.language) language FROM matters m JOIN intakes i ON i.id=m.intake_id WHERE m.id=? AND m.client_user_id=?",
   )
     .bind(matterId, context.get("user").id)
-    .first<{ state: string; urgency: string; state_code: string }>();
-  if (!matter || matter.state_code !== "LA" || matter.state !== "matching")
+    .first<{
+      state: string;
+      urgency: string;
+      state_code: string;
+      practice_area_code: string;
+      language: string;
+    }>();
+  if (!matter || matter.state !== "matching")
     return context.json(
       { message: "Matching is not available for this matter" },
       409,
@@ -830,8 +1027,15 @@ routes.get("/matches/:matterId", async (context) => {
   const urgentClause =
     matter.urgency === "standard" ? "" : " AND l.urgent_available=1";
   const result = await context.env.DB.prepare(
-    `SELECT l.id,l.display_name,l.year_of_call,l.firm_name,l.bio FROM lawyer_profiles l WHERE l.verification_status='verified' AND l.available=1${urgentClause} AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='state' AND c.value='LA') ORDER BY (SELECT COUNT(*) FROM matters m WHERE m.selected_lawyer_id=l.id AND m.state NOT IN ('closed','cancelled','refunded')) ASC,l.updated_at ASC LIMIT 5`,
-  ).all();
+    `SELECT l.id,l.display_name,l.year_of_call,l.firm_name,l.bio FROM lawyer_profiles l
+     WHERE l.verification_status='verified' AND l.available=1 AND (l.verification_expires_at IS NULL OR l.verification_expires_at>?)${urgentClause}
+     AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='state' AND c.value=?)
+     AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='practice_area' AND c.value=?)
+     AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='language' AND c.value=?)
+     ORDER BY (SELECT COUNT(*) FROM matters m WHERE m.selected_lawyer_id=l.id AND m.state NOT IN ('closed','cancelled','refunded')) ASC,l.updated_at ASC LIMIT 5`,
+  )
+    .bind(now(), matter.state_code, matter.practice_area_code, matter.language)
+    .all();
   return context.json(result.results);
 });
 
@@ -847,9 +1051,14 @@ routes.post(
     const user = context.get("user");
     const timestamp = now();
     const eligible = await context.env.DB.prepare(
-      "SELECT 1 FROM lawyer_profiles l JOIN matters m ON m.id=? WHERE l.id=? AND l.verification_status='verified' AND l.available=1 AND (m.urgency='standard' OR l.urgent_available=1) AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='state' AND c.value=m.state_code)",
+      `SELECT 1 FROM lawyer_profiles l JOIN matters m ON m.id=? JOIN intakes i ON i.id=m.intake_id WHERE l.id=?
+       AND l.verification_status='verified' AND l.available=1 AND (l.verification_expires_at IS NULL OR l.verification_expires_at>?)
+       AND (m.urgency='standard' OR l.urgent_available=1)
+       AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='state' AND c.value=m.state_code)
+       AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='practice_area' AND c.value=i.practice_area_code)
+       AND EXISTS(SELECT 1 FROM lawyer_capabilities c WHERE c.lawyer_id=l.id AND c.kind='language' AND c.value=COALESCE(i.language_v2,i.language))`,
     )
-      .bind(matterId, input.lawyerId)
+      .bind(matterId, input.lawyerId, timestamp)
       .first();
     if (!eligible)
       return context.json(
@@ -899,6 +1108,21 @@ routes.put(
     const user = context.get("user");
     if (input.email && context.env.EMAIL_DELIVERY_ENABLED !== "true")
       return context.json({ message: "Email delivery is not configured" }, 422);
+    if (
+      (input.whatsapp || input.push || input.email) &&
+      !(await optionalProcessingAllowed(
+        context.env.DB,
+        user.id,
+        "electronic-communications",
+      ))
+    )
+      return context.json(
+        {
+          message:
+            "Review and enable optional communications in the Legal Centre before choosing delivery channels.",
+        },
+        409,
+      );
     await context.env.DB.prepare(
       "INSERT INTO notification_preferences (user_id,whatsapp,push,email,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET whatsapp=excluded.whatsapp,push=excluded.push,email=excluded.email,updated_at=excluded.updated_at",
     )
@@ -921,6 +1145,20 @@ routes.post(
     const user = context.get("user");
     const tokenHash = await sha256(input.token);
     const timestamp = now();
+    if (
+      !(await optionalProcessingAllowed(
+        context.env.DB,
+        user.id,
+        "electronic-communications",
+      ))
+    )
+      return context.json(
+        {
+          message:
+            "Optional communications are turned off. Review your choice in the Legal Centre before registering notifications.",
+        },
+        409,
+      );
     await context.env.DB.prepare(
       "INSERT INTO push_devices (id,user_id,token_hash,token_encrypted,platform,consent_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET user_id=excluded.user_id,token_encrypted=excluded.token_encrypted,consent_at=excluded.consent_at,revoked_at=NULL,updated_at=excluded.updated_at",
     )
@@ -1038,6 +1276,24 @@ routes.post(
             "INSERT INTO lawyer_capabilities (lawyer_id,kind,value) VALUES (?,'state',?)",
           ).bind(id, stateCode.toUpperCase()),
         );
+      for (const practiceAreaCode of input.practiceAreaCodes)
+        statements.push(
+          context.env.DB.prepare(
+            "INSERT INTO lawyer_capabilities (lawyer_id,kind,value) VALUES (?,'practice_area',?)",
+          ).bind(id, practiceAreaCode),
+        );
+      for (const serviceCode of input.serviceCodes)
+        statements.push(
+          context.env.DB.prepare(
+            "INSERT INTO lawyer_capabilities (lawyer_id,kind,value) VALUES (?,'service',?)",
+          ).bind(id, serviceCode),
+        );
+      for (const consultationMode of input.consultationModes)
+        statements.push(
+          context.env.DB.prepare(
+            "INSERT INTO lawyer_capabilities (lawyer_id,kind,value) VALUES (?,'consultation_mode',?)",
+          ).bind(id, consultationMode),
+        );
       for (const role of input.tenancyRoles)
         statements.push(
           context.env.DB.prepare(
@@ -1149,7 +1405,7 @@ routes.post(
     const user = context.get("user");
     const timestamp = now();
     const lawyer = await context.env.DB.prepare(
-      "SELECT l.id FROM lawyer_profiles l JOIN matters m ON m.selected_lawyer_id=l.id WHERE l.user_id=? AND m.id=? AND m.state IN ('active','lawyer_review')",
+      "SELECT l.id FROM lawyer_profiles l JOIN matters m ON m.selected_lawyer_id=l.id WHERE l.user_id=? AND m.id=? AND m.state IN ('consultation_active','lawyer_review')",
     )
       .bind(user.id, matterId)
       .first<{ id: string }>();
@@ -1346,6 +1602,22 @@ async function uploadEvidence(
       { message: `${ownerType === "matter" ? "Matter" : "Intake"} not found` },
       404,
     );
+  if (ownerType === "intake") {
+    const intake = await context.env.DB.prepare(
+      "SELECT client_type,client_subject_id FROM intakes WHERE id=? AND client_user_id=?",
+    )
+      .bind(ownerId, user.id)
+      .first<{ client_type: string; client_subject_id: string | null }>();
+    const gate = intake
+      ? await clientContextGate(
+          context.env,
+          user.id,
+          intake.client_type,
+          intake.client_subject_id,
+        )
+      : "Intake not found";
+    if (gate) return context.json({ message: gate }, 403);
+  }
   const size = Number(context.req.header("content-length"));
   const max = Number(context.env.MAX_EVIDENCE_BYTES);
   if (!Number.isInteger(size) || size < 1 || size > max)
@@ -1458,7 +1730,7 @@ async function clientMatterAction(
       422,
     );
   const result = await context.env.DB.prepare(
-    "UPDATE matters SET state=?,version=version+1,updated_at=? WHERE id=? AND client_user_id=? AND version=? AND state IN ('active','awaiting_client','lawyer_review','delivered')",
+    "UPDATE matters SET state=?,version=version+1,updated_at=? WHERE id=? AND client_user_id=? AND version=? AND state IN ('consultation_scheduled','consultation_active','awaiting_client','lawyer_review','delivered')",
   )
     .bind(state, now(), matterId, user.id, body.version)
     .run();
@@ -1477,6 +1749,37 @@ async function clientMatterAction(
     metadata: { reason: body.reason },
   });
   return context.json({ matterId, state, version: body.version + 1 });
+}
+
+async function clientContextGate(
+  env: Env,
+  userId: string,
+  clientType: string,
+  subjectId: string | null,
+): Promise<string | null> {
+  if (clientType === "adult_individual") return null;
+  if (!subjectId) return "A verified client subject is required";
+  if (clientType === "minor") {
+    const verified = await env.DB.prepare(
+      "SELECT 1 FROM minor_profiles mp JOIN guardian_links gl ON gl.minor_profile_id=mp.id WHERE mp.id=? AND mp.user_id=? AND mp.status='guardian_verified' AND gl.status='verified'",
+    )
+      .bind(subjectId, userId)
+      .first();
+    return verified
+      ? null
+      : "Verified guardian consent or a restricted safeguarding decision is required before detailed facts or evidence";
+  }
+  if (clientType === "organization") {
+    const approved = await env.DB.prepare(
+      "SELECT 1 FROM organizations o JOIN organization_memberships om ON om.organization_id=o.id WHERE o.id=? AND om.user_id=? AND o.status='active' AND om.status='approved'",
+    )
+      .bind(subjectId, userId)
+      .first();
+    return approved
+      ? null
+      : "Operations approval of organization authority is required before detailed facts or evidence";
+  }
+  return "Unsupported client context";
 }
 
 export default routes;

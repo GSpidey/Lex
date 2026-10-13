@@ -9,6 +9,10 @@ export interface Env {
   STAGING_TEST_LOGIN_ENABLED: string;
   STAGING_TEST_PHONE_E164: string;
   EMAIL_DELIVERY_ENABLED: string;
+  EMAIL_PROVIDER?: string;
+  EMAIL_PROVIDER_STATUS?: string;
+  LEGAL_REVIEW_ORIGIN?: string;
+  OPENAI_PROVIDER_STATUS: string;
   META_GRAPH_VERSION: string;
   META_AUTH_TEMPLATE: string;
   META_AUTH_LOCALE: string;
@@ -26,12 +30,18 @@ export interface Env {
   OPENAI_API_KEY?: string;
   EXPO_ACCESS_TOKEN?: string;
   STAGING_TEST_OTP_CODE?: string;
+  FOUNDER_BOOTSTRAP_TOKEN?: string;
+  FOUNDER_BOOTSTRAP_TOKEN_HASH?: string;
+  TEST_MODE?: string;
+  FOUNDER_BOOTSTRAP_TEST_TOKEN?: string;
 }
 
 export interface AuthenticatedUser {
   id: string;
-  role: "client" | "lawyer" | "admin" | "super_admin";
+  role: "client" | "lawyer" | "operations" | "owner";
+  roles: Array<"client" | "lawyer" | "operations" | "owner">;
   sessionId: string;
+  lastStepUpAt?: string;
 }
 
 export type Variables = { user: AuthenticatedUser; requestId: string };

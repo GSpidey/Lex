@@ -2,12 +2,16 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lex-staging-web",
   "main": "src/index.ts",
-  "compatibility_date": "2026-08-08",
+  "compatibility_date": "2026-08-09",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
   "minify": true,
   "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "services": [
+    { "binding": "API", "service": "lex-staging-api" },
+    { "binding": "REALTIME", "service": "lex-staging-realtime" },
+  ],
   "assets": {
     "directory": "../web/out",
     "binding": "ASSETS",

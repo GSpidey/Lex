@@ -1,49 +1,55 @@
-# Lex Cloudflare-Native Controlled Pilot Plan
+# Lex Nationwide Legal Access — Production Preparation
+
+## Approved update — 2026-10-13
+
+This is the continuation of the existing full-spectrum plan, not a replacement product. Golden Epic Limited (Nigeria, RC 1538879) is the proposed platform contracting entity and merchant. GoldenEpic Solutions Inc. (Canada, corporation 1641963-1) provides technology and may publish the apps subject to store eligibility. Responsibilities require an intercompany agreement; no IP transfer or corporate parent/subsidiary relationship is assumed.
+
+The owner confirmed the supplied corporate records are current. The Canadian certificate date is 2024-10-24; the D&B screenshot's 2024-10-23 date must be reconciled. Sensitive source documents, identity details, bank data and credentials must not be committed.
+
+Delivery order:
+1. Replace generic policy seeds with substantive, versioned review drafts; implement public effective-policy access, append-only acceptance history, immutable review packets, recipient-bound invitations, MFA decisions and downloadable receipts.
+2. Port current Hono behavior into runtime-independent services and Node adapters for PostgreSQL, private S3-compatible storage, BullMQ and consultation WebSockets. Preserve Cloudflare staging until parity, migration and rollback are demonstrated.
+3. Run an isolated Lex Docker deployment with health checks, quarantine/malware scanning, secret injection and backup/restore tooling. Local production builds do not imply public availability or verified provider execution.
+4. Complete Paystack/Flutterwave, Meta, transactional email, OpenAI and push setup where credentials permit. Request only the missing provider input; no unrelated feature shutdown.
+5. Integrate owner-approved conversation/scales icon concept; prepare private Android signing/AAB and iOS release metadata. Prepare Apple Individual-to-organization conversion without submitting an account-wide change.
+6. Test cross-runtime authorization, migration integrity, provider failure/replay, policy publication/review, device journeys and restore. Commit and deploy verified scoped increments, recording incomplete work accurately.
+
+Email the partner's already-authorized private address only when a working authenticated review packet and sender exist. A link visit is not approval. Document changes invalidate the packet's approval for publication. Distinct-owner release approval remains required. Corporate, privacy, fee-sharing, store billing and translation review applies to the affected action, not unrelated working functionality.
+
+Domain purchase is owner-operated later; retain temporary Lex URLs. No public release, store upload, new server purchase, production payment or unrelated-resource mutation is authorized by this preparation.
+
+### Continuation progress — same plan
+
+- Shared catalogue and public-policy services now run through D1 and PostgreSQL adapters. The isolated Node Docker deployment is a first read-only slice; it is not a client endpoint cutover.
+- PostgreSQL migrations use checksums, one transaction and an advisory lock. Synthetic contract fixtures roll back instead of resetting data. Encrypted backup/isolated restore tooling is implemented; the first restore covers an empty legal-schema foundation, not the complete D1/R2 graph.
+- Mobile policies are accessible before sign-in. Signed-in app/web users can record document-specific decisions and withdraw optional processing. Ask Lex has an explicit disclosure/choice before external AI. Withdrawal is checked again in queued AI and notification work; typed intake, authentication and in-app access remain available.
+- Required agreements at every consultation/representation entry point, version-aware multilingual copy review, full authenticated UI/device testing and provider delivery remain unfinished. Existing contextual synthetic-staging consent is preserved when no formal document decision exists; this is not production consent completion.
+- Continue independent implementation while provider login, partner signing and legal/store choices await the owner. Never interpret silence as legal, financial or release approval.
 
 ## Product contract
 
-- Adult individual tenants and landlords.
-- Nationwide Nigeria intake; Lagos is `active`, every other state is `intake_only`.
-- Separate, versioned tenant and landlord tenancy questionnaires.
-- Lawyer-reviewed tenancy assessment at a sandbox price of NGN 10,000 with a 48-hour target after verified payment and complete required information.
-- Open lawyer applications, operations verification, 3-5 eligible matches, and conflict acceptance before payment.
-- Android is the first physical-device platform. The lawyer and operations workspace is responsive and static-hostable.
-- English and reviewed Pidgin are the controlled-pilot client languages; English is the authoritative legal record.
-- WhatsApp provides OTP and status continuity. Full conversational intake is deferred.
-- AI is limited to intake, transcription, summarization, extraction, classification, drafting support, and routing, with human-review boundaries.
+Lex provides nationwide Nigerian intake and synthetic service testing across a granular catalogue of legal practice areas. The common lifecycle is intake, client confirmation, safety review where necessary, eligibility-based matching, lawyer conflict clearance, sandbox payment, consultation, lawyer-attested assessment, and optional separately accepted representation tracking.
 
-## Active staging architecture
+## Delivery workstreams
 
-| Deployment                        | Responsibility                                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `lex-staging-api`                 | Hono `/v1` API, authentication, authorization, R2 streaming, provider webhooks, queue publishing |
-| `lex-staging-jobs`                | Queue consumers, dead-letter inspection, five-minute maintenance/SLA Cron                        |
-| `lex-staging-web`                 | Static lawyer and operations frontend                                                            |
-| `lex-staging-db`                  | EU-jurisdiction D1 database containing synthetic staging records                                 |
-| `lex-staging-private-eu`          | Private EU-restricted R2 evidence bucket                                                         |
-| `lex-staging-jobs` queue          | AI, transcription, reconciliation, evidence, and maintenance jobs                                |
-| `lex-staging-notifications` queue | WhatsApp, push, and future email delivery                                                        |
-| `lex-staging-dead-letter` queue   | Exhausted job and notification messages                                                          |
+1. Generalize contracts, catalogue, state machines, and legal-content versions while preserving tenancy IDs and behavior.
+2. Add adult/minor/guardian/organization context, authority review, safeguarding, and isolation rules.
+3. Add nationwide intake, category-specific addenda, confirmed classification, urgent operations routing, and matching assistance.
+4. Expand lawyer capabilities by practice area, state, language, consultation capacity, workload, and verified licence expiry.
+5. Add consultation scheduling, Durable Object live text coordination, D1-authoritative messages, voice notes, and lawyer assessment delivery.
+6. Add separate representation proposals, engagements, milestones, tasks, lawyer-confirmed deadlines, invoices, disputes, refunds, and termination.
+7. Generalize Paystack/Flutterwave sandbox payments and immutable allocation snapshots.
+8. Complete app/WhatsApp continuity and five-language typed/voice intake; connect Resend and Expo Push through provider adapters. The owner selected their existing Resend account on 2026-10-13. Preserve the unused Postmark adapter without silently falling back to it. Lex will have a dedicated domain registered and DNS-managed at Cloudflare; no existing unrelated Resend domain is a substitute. Obtain exact price approval before purchase and exact-record approval before sender DNS changes.
+9. Rebuild the client home and lawyer/operations workspace around general legal access with no dead navigation.
+10. Verify migrations, authorization, idempotency, replay handling, R2 privacy, queues/DLQ, realtime reconnect, provider contracts, accessibility, Gradle APK, and iOS-ready configuration.
+11. Add assigned multi-role accounts, complete legal-professional verification, Owner provider diagnostics, Legal Centre drafts and dual-control production gates.
+12. Convert the client entry journey to progressive accessible accordions and expose Ask Lex with correction, confirmation, fallback and human review.
+13. Prepare internal, TestFlight and production EAS profiles plus iOS privacy/metadata validation without uploading a build.
 
-The current NestJS, PostgreSQL, Prisma, Redis/BullMQ, and MinIO code remains as a fallback. Cloudflare business services depend on repository, storage, queue, cryptography, and provider contracts rather than Worker globals or binding names.
+## Cloudflare staging
 
-## Delivery sequence
+Only these isolated resources are in scope: `lex-staging-api`, `lex-staging-jobs`, `lex-staging-web`, new `lex-staging-realtime`, `lex-staging-db`, `lex-staging-private-eu`, and the three existing Lex staging queues. Worker-to-Worker communication uses bindings; D1 is authoritative; R2 stays private; secrets stay in Wrangler secret storage. The Free plan remains the default until measured requirements justify a user-approved upgrade.
 
-1. Correct documents and establish an evidence-based delivery-status matrix.
-2. Preserve existing API behavior with contract and state-transition tests.
-3. Add Worker packages, `wrangler.jsonc` configuration, generated binding types, and local simulations.
-4. Add portable D1 schema, migrations, synthetic seed, idempotency keys, and optimistic versions.
-5. Port authentication, intake, matters, matching, payments, privacy, messaging, and operations behind interfaces.
-6. Add private R2 upload/download, Queue consumers, job ledger, retries, dead-letter handling, and Cron recovery.
-7. Complete English/Pidgin Android and lawyer/operations user flows without dead navigation.
-8. Run local migrations, type checks, tests, bundle/startup checks, and Wrangler dry-runs.
-9. Create only the approved `lex-staging-*` resources in the current Cloudflare account.
-10. Deploy to `workers.dev`, migrate and seed synthetic data, then build the Gradle APK against the approved staging URL.
-11. Add Meta, OpenAI, Paystack, Flutterwave, and push test secrets only when credentials are provided securely.
-12. Run provider, physical-device, recovery, replay, authorization, and end-to-end acceptance tests.
+## Acceptance rule
 
-## Acceptance boundary
-
-No feature is described as complete merely because its screen, route, adapter, or test double exists. Status is tracked in `docs/DELIVERY_STATUS.md`. Provider-dependent items require provider-level evidence; physical-device items require device evidence; legal content and commercial structures require recorded lawyer-co-founder approval.
-
-If secure representative Worker endpoints cannot stay within the Free plan's CPU limit, implementation pauses for approval of the paid Workers plan. Security controls must not be weakened to fit the Free plan.
+A route or screen is not provider-verified merely because an adapter or mock exists. Provider, device, legal, translation, and production gates are reported separately. No real client data, money, legal advice, public claim, or unrelated Cloudflare resource is used.

@@ -1,6 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import { authChallenges, sessions, users } from "@lex/d1";
+import { authChallenges } from "@lex/d1";
 import type { AuthenticatedUser, Env } from "./types.js";
 
 export const now = () => new Date().toISOString();
@@ -15,32 +15,53 @@ export async function findActiveSession(
   env: Env,
   tokenHash: string,
 ): Promise<AuthenticatedUser | null> {
-  const rows = await database(env)
-    .select({ sessionId: sessions.id, userId: users.id, role: users.role })
-    .from(sessions)
-    .innerJoin(users, eq(sessions.userId, users.id))
-    .where(
-      and(
-        eq(sessions.accessTokenHash, tokenHash),
-        isNull(sessions.revokedAt),
-        eq(users.status, "active"),
-      ),
-    )
-    .limit(1);
-  const row = rows[0];
-  if (!row) return null;
-  const valid = await env.DB.prepare(
-    "SELECT 1 FROM sessions WHERE id=? AND expires_at>?",
+  const row = await env.DB.prepare(
+    `SELECT s.id session_id,s.user_id,s.active_role,s.last_step_up_at,u.role legacy_role
+       FROM sessions s JOIN users u ON u.id=s.user_id
+      WHERE s.access_token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'`,
   )
-    .bind(row.sessionId, now())
-    .first();
-  if (!valid) return null;
+    .bind(tokenHash, now())
+    .first<{
+      session_id: string;
+      user_id: string;
+      active_role: string | null;
+      last_step_up_at: string | null;
+      legacy_role: string;
+    }>();
+  if (!row) return null;
+  const assignments = await env.DB.prepare(
+    "SELECT role FROM user_role_assignments WHERE user_id=? AND status='active' ORDER BY role",
+  )
+    .bind(row.user_id)
+    .all<{ role: AuthenticatedUser["role"] }>();
+  const roles = assignments.results.map((item) => item.role);
+  const legacyRole = canonicalRole(row.legacy_role);
+  if (roles.length === 0) roles.push(legacyRole);
+  const activeRole = roles.includes(
+    row.active_role as AuthenticatedUser["role"],
+  )
+    ? (row.active_role as AuthenticatedUser["role"])
+    : (roles[0] ?? legacyRole);
   await env.DB.prepare(
     "UPDATE sessions SET last_seen_at = ? WHERE id = ? AND last_seen_at < ?",
   )
-    .bind(now(), row.sessionId, new Date(Date.now() - 300_000).toISOString())
+    .bind(now(), row.session_id, new Date(Date.now() - 300_000).toISOString())
     .run();
-  return { id: row.userId, role: row.role, sessionId: row.sessionId };
+  return {
+    id: row.user_id,
+    role: activeRole,
+    roles,
+    sessionId: row.session_id,
+    ...(row.last_step_up_at ? { lastStepUpAt: row.last_step_up_at } : {}),
+  };
+}
+
+export function canonicalRole(role: string): AuthenticatedUser["role"] {
+  if (role === "admin") return "operations";
+  if (role === "super_admin") return "owner";
+  if (["client", "lawyer", "operations", "owner"].includes(role))
+    return role as AuthenticatedUser["role"];
+  return "client";
 }
 
 export async function challengeById(env: Env, id: string) {

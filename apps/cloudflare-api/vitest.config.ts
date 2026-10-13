@@ -21,6 +21,12 @@ export default defineWorkersConfig({
             STAGING_TEST_LOGIN_ENABLED: "true",
             STAGING_TEST_PHONE_E164: "+2348000000001",
             STAGING_TEST_OTP_CODE: "246810",
+            OPENAI_PROVIDER_STATUS: "configured_unverified",
+            FOUNDER_BOOTSTRAP_TOKEN:
+              "local-founder-bootstrap-token-at-least-32-characters",
+            TEST_MODE: "true",
+            FOUNDER_BOOTSTRAP_TEST_TOKEN:
+              "local-founder-bootstrap-test-token-at-least-32-characters",
             TEST_MIGRATIONS: migrations,
           },
         },

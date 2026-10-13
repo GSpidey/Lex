@@ -1,0 +1,69 @@
+# Current Hono migration target. Not the legacy NestJS compose stack.
+name: lex-docker
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lex
+      POSTGRES_DB: lex
+      POSTGRES_PASSWORD_FILE: /run/secrets/lex_postgres_password
+    secrets: [lex_postgres_password]
+    volumes: [lex-postgres:/var/lib/postgresql/data]
+    networks: [lex-private]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U lex -d lex"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+  migrate:
+    image: lex-node-api:local
+    build: { context: .., dockerfile: infra/docker/node-api.Dockerfile }
+    command: [node, dist/migrate.mjs]
+    environment: &api-environment
+      NODE_ENV: production
+      LEX_POSTGRES_HOST: postgres
+      LEX_POSTGRES_PASSWORD_FILE: /run/secrets/lex_postgres_password
+    secrets: [lex_postgres_password]
+    depends_on: { postgres: { condition: service_healthy } }
+    networks: [lex-private]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  api:
+    image: lex-node-api:local
+    build: { context: .., dockerfile: infra/docker/node-api.Dockerfile }
+    restart: unless-stopped
+    environment: *api-environment
+    secrets: [lex_postgres_password]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    # Loopback only until full parity and a Lex HTTPS hostname are ready.
+    ports: ["127.0.0.1:4180:4000"]
+    networks: [lex-private, lex-edge]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+secrets:
+  lex_postgres_password:
+    file: ../.secrets/docker/postgres-password
+volumes:
+  lex-postgres:
+networks:
+  lex-private:
+    internal: true
+  lex-edge:
+    driver: bridge

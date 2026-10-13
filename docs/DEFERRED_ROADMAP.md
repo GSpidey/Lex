@@ -1,16 +1,15 @@
-# Deferred Roadmap
+# Deferred Production Roadmap
 
-The following work is intentionally outside the controlled pilot. It must not appear as a working or promised pilot capability.
+The nationwide synthetic test release includes the complete domain shape. These production gates remain deliberately deferred:
 
-- Full conversational WhatsApp intake, inbound media retrieval, voice processing, app linking, and channel-neutral state restoration.
-- Hausa, Yoruba, and Igbo interfaces, voice evaluations, and native-language approval.
-- Dedicated Lex WhatsApp number and production Meta business verification.
-- iOS signing and physical-device distribution.
-- Custom Lex domain and public storefronts.
-- Production transactional email, independent encrypted exports, and longer recovery objectives.
-- Additional Nigerian states, legal categories, and countries.
-- PostgreSQL/Hyperdrive production migration if D1 scale, residency, reporting, transactions, or legal requirements demand it.
-- Privacy-approved production malware scanning and full incident-response tooling.
-- Production payments, client-money handling, referral/commission activation, court filing, representation, negotiation, and emergency-service guarantees.
+- Meta media retrieval and voice processing across WhatsApp after test credentials and privacy review.
+- Native review of Hausa, Yoruba, Igbo and Pidgin consent/safety copy and representative voice evaluations.
+- Dedicated production WhatsApp number, Meta business verification and approved templates.
+- Real-client or real-money activation, including legal approval of referral/fee-sharing, settlement, refunds, chargebacks and client-money claims.
+- Production malware scanning, incident response, independent encrypted D1/R2 exports and longer recovery objectives.
+- Custom domain, public storefronts, app-store distribution, production Android signing, Apple signing and physical iOS distribution.
+- Additional country jurisdiction packages. Nigerian nationwide synthetic availability does not constitute legal-content approval for every state.
+- PostgreSQL/Hyperdrive migration if measured D1 transaction, scale, residency, reporting or recovery needs require it.
+- Native audio/video calling, automated legal deadlines, court filing, negotiation, representation by Lex, outcome prediction and emergency-service guarantees remain excluded.
 
-Each roadmap item needs its own reviewed product contract, security/privacy assessment, legal approval where relevant, and acceptance evidence before activation.
+Each item requires a reviewed product contract, threat/privacy assessment, legal approval where applicable, provider evidence and explicit user authorization before activation.
