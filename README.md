@@ -36,8 +36,29 @@ The NGN 10,000 default and configurable 20/80 split are synthetic sandbox settin
 - `packages/contracts`: channel-neutral domain and provider contracts.
 - `packages/jurisdictions`: versioned Nigerian catalogue and service workflows.
 - `packages/d1`: portable D1/SQLite schema definitions.
+- `packages/platform-core`: runtime-neutral catalogue and public-policy services.
+- `apps/node-api`: the current Hono-to-Node migration slice, not yet a complete backend replacement.
 
 The legacy NestJS/PostgreSQL implementation remains a portability reference. No existing non-Lex Cloudflare resource may be inspected, reused, renamed, or modified.
+
+## Isolated Docker migration environment
+
+Run `pnpm.cmd docker:init`, then `pnpm.cmd docker:up`. This uses **only**
+`infra/compose.lex.yml` and the `lex-docker` Compose project. Random database and
+backup secrets stay in the ignored `.secrets/docker` directory; initialization
+preserves existing values. Do not use the legacy root Compose stack for this port.
+
+The Node API is available at `http://127.0.0.1:4180/v1/health`. It currently serves
+the catalogue and effective public policies through typed PostgreSQL repositories.
+Health explicitly reports `cutoverReady: false`; unmigrated routes return 501 and
+do not forward writes to Cloudflare. The existing app remains on Cloudflare.
+
+Run `pnpm.cmd docker:check` for transactional PostgreSQL contract tests. Run
+`node scripts/lex-docker-backup.mjs backup` for an encrypted schema/data backup,
+then `node scripts/lex-docker-backup.mjs restore-test <backup-filename>` for an
+isolated restore. Restored test databases are retained; these commands never
+replace the live `lex` database. Keep the encryption key separately backed up.
+See the [portability contract](docs/D1_POSTGRES_PORTABILITY.md) for remaining work.
 
 ## Local verification
 

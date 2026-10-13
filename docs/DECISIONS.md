@@ -35,6 +35,9 @@
 - Icon concept 2, conversation and scales, was approved by the owner. Platform exports are based on that exact artwork.
 - The Apple membership conversion is preparation only: no account-wide request, store upload or public release without the owner's next authorization.
 - Electronic legal review is version-bound and authenticated with MFA. Distinct-owner publication is separate. No email opening, AI draft, or synthetic test constitutes approval.
+- Docker uses the separate `lex-docker` project and `infra/compose.lex.yml`, with loopback-only API access. Incremental routes share runtime-neutral services; unmigrated routes do not proxy into Cloudflare or create split authoritative writes.
+- Optional-processing withdrawal applies across channels and policy versions. Already-sent data cannot be recalled; queued work checks current permission before provider use and AI results are checked again before persistence. Withdrawing optional notifications does not disable authentication or in-app access. Re-consent does not silently reactivate old AI conversations or push registrations.
+- Backup recovery is accepted in layers: an authenticated encrypted PostgreSQL restore proves that mechanism only; full source counts, relationships, evidence hashes and real workflow parity remain separate migration acceptance.
 
 ## External prerequisites carried forward
 

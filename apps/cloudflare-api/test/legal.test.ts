@@ -1,6 +1,8 @@
-import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { applyD1Migrations, env, SELF, fetchMock } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { sha256, encrypt, verifyTotp } from "../src/crypto.js";
+import { optionalProcessingAllowed } from "@lex/d1";
+import { dispatch } from "../../cloudflare-jobs/src/index.js";
 declare module "cloudflare:test" {
   interface ProvidedEnv {
     FIELD_ENCRYPTION_KEY: string;
@@ -450,5 +452,201 @@ describe("Version-bound legal review", () => {
         )
       ).status,
     ).toBe(409);
+  });
+  it("applies optional AI withdrawal across channels without disabling guided intake", async () => {
+    const timestamp = new Date().toISOString();
+    const document = await env.DB.prepare(
+      "SELECT id FROM legal_documents WHERE code='ai-routing-disclosure'",
+    ).first<{ id: string }>();
+    const version = `synthetic-ai-${crypto.randomUUID()}`;
+    await env.DB.prepare(
+      "INSERT INTO legal_document_versions (id,document_id,version,language,status,content_markdown,effective_at,created_at,updated_at) VALUES (?,?,99,'en','published','Synthetic AI consent fixture',?,?,?)",
+    )
+      .bind(version, document!.id, timestamp, timestamp, timestamp)
+      .run();
+    const body = {
+      documentVersionId: version,
+      language: "en",
+      channel: "web",
+      accepted: true,
+    };
+    expect(
+      (await request("/legal/acceptances", client, body, "ai-consent")).status,
+    ).toBe(201);
+    const response = await request("/ai/intake-sessions", client, {
+      language: "en",
+      channel: "mobile",
+      aiDisclosureAccepted: true,
+      aiDisclosureVersion: version,
+    });
+    expect(response.status).toBe(201);
+    const conversation = await response.json<{ id: string }>();
+    expect(
+      (
+        await request(
+          "/legal/withdrawals",
+          client,
+          { ...body, channel: "mobile" },
+          "ai-withdraw-mobile",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      await optionalProcessingAllowed(env.DB, client, "ai-routing-disclosure"),
+    ).toBe(false);
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT ai_enabled FROM channel_conversations WHERE id=?",
+        )
+          .bind(conversation.id)
+          .first<{ ai_enabled: number }>()
+      )?.ai_enabled,
+    ).toBe(0);
+    const next = await request("/ai/intake-sessions", client, {
+      language: "en",
+      channel: "web",
+      aiDisclosureAccepted: true,
+      aiDisclosureVersion: version,
+    });
+    expect((await next.json<{ provider: string }>()).provider).toBe(
+      "deterministic_fallback",
+    );
+    const turn = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO conversation_turns (id,conversation_id,actor,body,status,created_at) VALUES (?,?,'client','Synthetic contract enquiry','recorded',?)",
+    )
+      .bind(turn, conversation.id, timestamp)
+      .run();
+    // If the permission check is bypassed this unusable key causes the test to
+    // fail instead of silently counting a provider call as verification.
+    fetchMock.activate();
+    fetchMock.disableNetConnect();
+    try {
+      await dispatch(
+        "ai_guided_intake",
+        { conversationId: conversation.id, clientTurnId: turn },
+        {
+          ...env,
+          AUTH_HMAC_PEPPER: "synthetic-pepper-for-consent-test-only",
+          OPENAI_API_KEY: "synthetic-invalid-key-never-send",
+          OPENAI_INTAKE_MODEL: "synthetic",
+          META_STATUS_TEMPLATE: "synthetic",
+          POSTMARK_FROM_EMAIL: "",
+          POSTMARK_MESSAGE_STREAM: "outbound",
+        },
+      );
+    } finally {
+      fetchMock.deactivate();
+    }
+    const run = await env.DB.prepare(
+      "SELECT model FROM ai_runs WHERE input_refs_json LIKE ? ORDER BY rowid DESC LIMIT 1",
+    )
+      .bind(`%${turn}%`)
+      .first<{ model: string }>();
+    expect(run?.model).toBe("deterministic-fallback-v1");
+    expect(
+      (await request("/legal/acceptances", client, body, "ai-consent-restored"))
+        .status,
+    ).toBe(201);
+    expect(
+      await optionalProcessingAllowed(env.DB, client, "ai-routing-disclosure"),
+    ).toBe(true);
+    // Prior conversations do not silently reactivate after a fresh opt-in.
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT ai_enabled FROM channel_conversations WHERE id=?",
+        )
+          .bind(conversation.id)
+          .first<{ ai_enabled: number }>()
+      )?.ai_enabled,
+    ).toBe(0);
+    const newerVersion = `${version}-newer`;
+    await env.DB.prepare(
+      "INSERT INTO legal_document_versions (id,document_id,version,language,status,content_markdown,effective_at,created_at,updated_at) VALUES (?,?,100,'en','published','New synthetic consent version',?,?,?)",
+    )
+      .bind(newerVersion, document!.id, timestamp, timestamp, timestamp)
+      .run();
+    // A new policy must not strand the ability to withdraw an older consent.
+    const newerBody = { ...body, documentVersionId: newerVersion };
+    expect(
+      (await request("/legal/withdrawals", client, newerBody)).status,
+    ).toBe(201);
+    expect(
+      await optionalProcessingAllowed(env.DB, client, "ai-routing-disclosure"),
+    ).toBe(false);
+    expect(
+      (await request("/legal/acceptances", client, newerBody)).status,
+    ).toBe(201);
+    expect((await request("/legal/withdrawals", client, body)).status).toBe(
+      201,
+    );
+    expect(
+      await optionalProcessingAllowed(env.DB, client, "ai-routing-disclosure"),
+    ).toBe(false);
+    expect((await request("/legal/acceptances", client, body)).status).toBe(
+      409,
+    );
+  });
+  it("withdraws external updates but preserves authentication and in-app access", async () => {
+    const timestamp = new Date().toISOString();
+    const document = await env.DB.prepare(
+      "SELECT id FROM legal_documents WHERE code='electronic-communications'",
+    ).first<{ id: string }>();
+    const version = `synthetic-communications-${crypto.randomUUID()}`;
+    await env.DB.prepare(
+      "INSERT INTO legal_document_versions (id,document_id,version,language,status,content_markdown,effective_at,created_at,updated_at) VALUES (?,?,99,'en','published','Synthetic optional communication consent',?,?,?)",
+    )
+      .bind(version, document!.id, timestamp, timestamp, timestamp)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO notification_preferences(user_id,whatsapp,push,email,updated_at) VALUES (?,1,1,1,?) ON CONFLICT(user_id) DO UPDATE SET whatsapp=1,push=1,email=1",
+    )
+      .bind(client, timestamp)
+      .run();
+    const body = {
+      documentVersionId: version,
+      language: "en",
+      channel: "web",
+      accepted: true,
+    };
+    expect(
+      (
+        await request(
+          "/legal/acceptances",
+          client,
+          body,
+          "communications-accept",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await request(
+          "/legal/withdrawals",
+          client,
+          { ...body, channel: "mobile" },
+          "communications-withdraw",
+        )
+      ).status,
+    ).toBe(201);
+    const preferences = await env.DB.prepare(
+      "SELECT whatsapp,push,email FROM notification_preferences WHERE user_id=?",
+    )
+      .bind(client)
+      .first();
+    expect(preferences).toEqual({ whatsapp: 0, push: 0, email: 0 });
+    expect(
+      await optionalProcessingAllowed(
+        env.DB,
+        client,
+        "electronic-communications",
+      ),
+    ).toBe(false);
+    expect((await request("/auth/me", client)).status).toBe(200);
+    expect((await request("/notification-preferences", client)).status).toBe(
+      200,
+    );
   });
 });

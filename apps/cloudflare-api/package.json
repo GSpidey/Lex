@@ -21,6 +21,7 @@
     "@lex/contracts": "workspace:*",
     "@lex/d1": "workspace:*",
     "@lex/jurisdictions": "workspace:*",
+    "@lex/platform-core": "workspace:*",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.10.4",
     "zod": "^4.4.3"

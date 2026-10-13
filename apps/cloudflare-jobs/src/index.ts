@@ -1,4 +1,5 @@
 import { decrypt, encrypt, hmac } from "./crypto.js";
+import { optionalProcessingAllowed } from "@lex/d1/optional-processing";
 
 interface Env {
   DB: D1Database;
@@ -111,7 +112,7 @@ async function processMessage(jobId: string, env: Env) {
   }
 }
 
-async function dispatch(
+export async function dispatch(
   kind: string,
   payload: Record<string, unknown>,
   env: Env,
@@ -257,7 +258,7 @@ async function checkEvidence(evidenceId: string, env: Env) {
 async function transcribe(transcriptionId: string, env: Env) {
   if (!env.OPENAI_API_KEY) throw new Error("OpenAINotConfigured");
   const record = await env.DB.prepare(
-    "SELECT t.evidence_id,t.language,e.object_key,e.file_name,e.content_type FROM transcriptions t JOIN evidence_items e ON e.id=t.evidence_id WHERE t.id=? AND t.status='queued'",
+    "SELECT t.evidence_id,t.language,e.object_key,e.file_name,e.content_type,e.owner_user_id FROM transcriptions t JOIN evidence_items e ON e.id=t.evidence_id WHERE t.id=? AND t.status='queued'",
   )
     .bind(transcriptionId)
     .first<{
@@ -266,8 +267,23 @@ async function transcribe(transcriptionId: string, env: Env) {
       object_key: string;
       file_name: string;
       content_type: string;
+      owner_user_id: string;
     }>();
   if (!record) return;
+  if (
+    !(await optionalProcessingAllowed(
+      env.DB,
+      record.owner_user_id,
+      "ai-routing-disclosure",
+    ))
+  ) {
+    await env.DB.prepare(
+      "UPDATE transcriptions SET status='consent_withdrawn',version=version+1,updated_at=? WHERE id=? AND status='queued'",
+    )
+      .bind(now(), transcriptionId)
+      .run();
+    return;
+  }
   const object = await env.PRIVATE_EVIDENCE.get(record.object_key);
   if (!object) throw new Error("AudioObjectMissing");
   const form = new FormData();
@@ -289,6 +305,20 @@ async function transcribe(transcriptionId: string, env: Env) {
   const body = (await response.json()) as { text?: string };
   if (!response.ok || !body.text)
     throw new Error("TranscriptionProviderFailed");
+  if (
+    !(await optionalProcessingAllowed(
+      env.DB,
+      record.owner_user_id,
+      "ai-routing-disclosure",
+    ))
+  ) {
+    await env.DB.prepare(
+      "UPDATE transcriptions SET status='consent_withdrawn',version=version+1,updated_at=? WHERE id=?",
+    )
+      .bind(now(), transcriptionId)
+      .run();
+    return;
+  }
   await env.DB.prepare(
     "UPDATE transcriptions SET transcript=?,status='ready',model='gpt-4o-transcribe',version=version+1,updated_at=? WHERE id=?",
   )
@@ -304,13 +334,14 @@ async function extractIntake(
   const intakeId = String(payload.intakeId ?? "");
   const summaryVersion = Number(payload.version ?? 0);
   const intake = await env.DB.prepare(
-    `SELECT i.narrative,i.desired_outcome,i.practice_area_code,i.client_type,
+    `SELECT i.client_user_id,i.narrative,i.desired_outcome,i.practice_area_code,i.client_type,
             COALESCE(i.language_v2,i.language) language,i.structured_summary_json
        FROM intakes i WHERE i.id=? AND i.summary_version=?`,
   )
     .bind(intakeId, summaryVersion)
     .first<{
       narrative: string | null;
+      client_user_id: string;
       desired_outcome: string | null;
       practice_area_code: string | null;
       client_type: string | null;
@@ -318,6 +349,14 @@ async function extractIntake(
       structured_summary_json: string | null;
     }>();
   if (!intake) return;
+  if (
+    !(await optionalProcessingAllowed(
+      env.DB,
+      intake.client_user_id,
+      "ai-routing-disclosure",
+    ))
+  )
+    return;
   const answers = await env.DB.prepare(
     "SELECT question_key,value_json FROM intake_answers WHERE intake_id=? ORDER BY question_key",
   )
@@ -404,6 +443,14 @@ async function extractIntake(
     ?.flatMap((item) => item.content ?? [])
     .find((item) => item.type === "output_text")?.text;
   if (!outputText) throw new Error("OpenAIIntakeOutputMissing");
+  if (
+    !(await optionalProcessingAllowed(
+      env.DB,
+      intake.client_user_id,
+      "ai-routing-disclosure",
+    ))
+  )
+    return;
   const output = JSON.parse(outputText) as {
     confidenceMillis: number;
     requiresHumanReview: boolean;
@@ -451,7 +498,7 @@ async function guidedIntake(
   const conversationId = String(payload.conversationId ?? "");
   const clientTurnId = String(payload.clientTurnId ?? "");
   const conversation = await env.DB.prepare(
-    "SELECT id,user_id,channel,language,state,version FROM channel_conversations WHERE id=?",
+    "SELECT id,user_id,channel,language,state,version,ai_enabled FROM channel_conversations WHERE id=?",
   )
     .bind(conversationId)
     .first<{
@@ -461,10 +508,11 @@ async function guidedIntake(
       language: string;
       state: string;
       version: number;
+      ai_enabled: number;
     }>();
   if (
     !conversation ||
-    ["completed", "deleted", "opted_out"].includes(conversation.state)
+    ["completed", "deleted", "opted_out", "paused"].includes(conversation.state)
   )
     return;
   const existing = await env.DB.prepare(
@@ -505,7 +553,15 @@ async function guidedIntake(
   };
   let usage: Record<string, unknown> = {};
 
-  if (!env.OPENAI_API_KEY) {
+  const useProvider =
+    Boolean(env.OPENAI_API_KEY) &&
+    conversation.ai_enabled === 1 &&
+    (await optionalProcessingAllowed(
+      env.DB,
+      conversation.user_id,
+      "ai-routing-disclosure",
+    ));
+  if (!useProvider) {
     output = deterministicGuidedReply(chronologicalTurns);
   } else {
     const schema = {
@@ -588,6 +644,15 @@ async function guidedIntake(
   }
 
   const validCodes = new Set(catalogue.results.map((item) => item.code));
+  if (
+    useProvider &&
+    !(await optionalProcessingAllowed(
+      env.DB,
+      conversation.user_id,
+      "ai-routing-disclosure",
+    ))
+  )
+    return;
   output.suggestedPracticeAreaCodes = output.suggestedPracticeAreaCodes.filter(
     (code) => validCodes.has(code),
   );
@@ -608,7 +673,7 @@ async function guidedIntake(
        VALUES (?,'guided_intake',?,'guided-intake-v1','guided-intake-output-v1',?,?,?,?,?,?,?)`,
     ).bind(
       runId,
-      env.OPENAI_API_KEY ? model : "deterministic-fallback-v1",
+      useProvider ? model : "deterministic-fallback-v1",
       JSON.stringify({ conversationId, clientTurnId }),
       JSON.stringify(output),
       Math.max(0, Math.min(1000, output.confidenceMillis)),
@@ -808,18 +873,27 @@ async function sendMatterStatus(
 ) {
   const matterId = String(payload.matterId ?? "");
   const row = await env.DB.prepare(
-    `SELECT u.phone_encrypted,u.email_encrypted,np.whatsapp,np.push,np.email
+    `SELECT u.id user_id,u.phone_encrypted,u.email_encrypted,np.whatsapp,np.push,np.email
      FROM matters m JOIN users u ON u.id=m.client_user_id LEFT JOIN notification_preferences np ON np.user_id=u.id WHERE m.id=?`,
   )
     .bind(matterId)
     .first<{
       phone_encrypted: string | null;
+      user_id: string;
       email_encrypted: string | null;
       whatsapp: number | null;
       push: number | null;
       email: number | null;
     }>();
   if (!row) return;
+  if (
+    !(await optionalProcessingAllowed(
+      env.DB,
+      row.user_id,
+      "electronic-communications",
+    ))
+  )
+    return;
   const body = `Lex update: ${kind.replaceAll("_", " ")} for matter ${matterId}. Open Lex for private details.`;
   const deliveries: Promise<void>[] = [];
   if (

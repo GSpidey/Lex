@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { publicLegalDocuments } from "@lex/platform-core";
+import { D1PublicLegalRepository } from "./public-legal-repository.js";
 import { encrypt, hmac, randomToken, sha256 } from "./crypto.js";
 import { requireAuth, requireRole, type AppContext } from "./middleware.js";
 import { now, future, recordJobBeforePublish } from "./repository.js";
@@ -36,31 +38,12 @@ const columns =
   "v.*,v.id AS version_id,d.code,d.title,d.visibility,d.acceptance_kind,d.audience,d.required_at,d.optional";
 
 routes.get("/legal/documents", async (c) => {
-  const language = c.req.query("language") ?? "en";
-  const result = await c.env.DB.prepare(
-    `SELECT ${columns} FROM legal_document_versions v JOIN legal_documents d ON d.id=v.document_id
-    WHERE d.visibility='public' AND v.language=? AND v.status='published' AND v.effective_at<=?
-    AND NOT EXISTS (SELECT 1 FROM legal_document_versions newer WHERE newer.document_id=v.document_id AND newer.language=v.language AND newer.status='published' AND newer.effective_at<=? AND newer.version>v.version)
-    ORDER BY d.title`,
-  )
-    .bind(language, now(), now())
-    .all<Version>();
-  return c.json({
-    items: result.results.map((v) => ({
-      id: v.document_id,
-      version_id: v.id,
-      code: v.code,
-      title: v.title,
-      version: v.version,
-      language: v.language,
-      status: v.status,
-      content_markdown: v.content_markdown,
-      content_hash: v.content_hash,
-      effective_at: v.effective_at,
-      acceptance_kind: v.acceptance_kind,
-    })),
-    stagingDraftsVisible: false,
-  });
+  return c.json(
+    await publicLegalDocuments(
+      new D1PublicLegalRepository(c.env.DB),
+      c.req.query("language") ?? "en",
+    ),
+  );
 });
 
 routes.use("/legal/acceptances", requireAuth);
@@ -69,7 +52,7 @@ routes.get("/legal/acceptances", async (c) =>
   c.json({
     items: (
       await c.env.DB.prepare(
-        "SELECT id,document_version_id,kind,language,channel,occurred_at FROM legal_consent_events WHERE user_id=? ORDER BY occurred_at,id",
+        "SELECT e.id,e.document_version_id,e.kind,e.language,e.channel,e.occurred_at,d.code AS document_code FROM legal_consent_events e JOIN legal_document_versions v ON v.id=e.document_version_id JOIN legal_documents d ON d.id=v.document_id WHERE e.user_id=? ORDER BY e.rowid",
       )
         .bind(c.get("user").id)
         .all()
@@ -112,6 +95,21 @@ async function recordConsent(
       },
       409,
     );
+  if (!withdrawal) {
+    const newer = await c.env.DB.prepare(
+      "SELECT 1 FROM legal_document_versions WHERE document_id=? AND language=? AND status='published' AND effective_at<=? AND version>?",
+    )
+      .bind(version.document_id, version.language, now(), version.version)
+      .first();
+    if (newer)
+      return c.json(
+        {
+          message:
+            "A newer effective document is available. Read that version before accepting.",
+        },
+        409,
+      );
+  }
   if (!withdrawal && version.acceptance_kind === "notice")
     return c.json({ message: "This notice does not require consent" }, 422);
   const kind = withdrawal
@@ -120,14 +118,30 @@ async function recordConsent(
       ? "acknowledged"
       : "accepted";
   const latest = await c.env.DB.prepare(
-    "SELECT id,kind,occurred_at FROM legal_consent_events WHERE user_id=? AND document_version_id=? AND channel=? ORDER BY rowid DESC LIMIT 1",
+    version.acceptance_kind === "optional_consent"
+      ? "SELECT e.id,e.kind,e.occurred_at,e.document_version_id FROM legal_consent_events e JOIN legal_document_versions v ON v.id=e.document_version_id WHERE e.user_id=? AND v.document_id=? ORDER BY e.rowid DESC LIMIT 1"
+      : "SELECT id,kind,occurred_at,document_version_id FROM legal_consent_events WHERE user_id=? AND document_version_id=? ORDER BY rowid DESC LIMIT 1",
   )
-    .bind(c.get("user").id, version.id, input.channel)
-    .first<{ id: string; kind: string; occurred_at: string }>();
+    .bind(
+      c.get("user").id,
+      version.acceptance_kind === "optional_consent"
+        ? version.document_id
+        : version.id,
+    )
+    .first<{
+      id: string;
+      kind: string;
+      occurred_at: string;
+      document_version_id: string;
+    }>();
   const idempotency =
     c.req.header("idempotency-key") ??
     `${kind}:${version.id}:${input.channel}:${latest?.kind === kind ? "repeat" : (latest?.id ?? "initial")}`;
-  if (!c.req.header("idempotency-key") && latest?.kind === kind)
+  if (
+    !c.req.header("idempotency-key") &&
+    latest?.kind === kind &&
+    (withdrawal || latest.document_version_id === version.id)
+  )
     return c.json({ kind, acceptedAt: latest.occurred_at, duplicate: true });
   if (idempotency.length > 200)
     return c.json({ message: "Invalid idempotency key" }, 400);
@@ -154,7 +168,7 @@ async function recordConsent(
     return c.json({ message: "No active optional consent to withdraw" }, 409);
   const timestamp = now(),
     id = crypto.randomUUID();
-  const results = await c.env.DB.batch([
+  const statements = [
     c.env.DB.prepare(
       "INSERT INTO legal_consent_events (id,user_id,document_version_id,kind,language,channel,device_hash,source_ip_hash,occurred_at,idempotency_key) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING",
     ).bind(
@@ -184,7 +198,27 @@ async function recordConsent(
       timestamp,
       id,
     ),
-  ]);
+  ];
+  if (withdrawal && version.code === "ai-routing-disclosure") {
+    statements.push(
+      c.env.DB.prepare(
+        "UPDATE channel_conversations SET ai_enabled=0,version=version+1,updated_at=? WHERE user_id=? AND EXISTS(SELECT 1 FROM legal_consent_events WHERE id=?)",
+      ).bind(timestamp, c.get("user").id, id),
+    );
+  }
+  if (withdrawal && version.code === "electronic-communications") {
+    statements.push(
+      c.env.DB.prepare(
+        "UPDATE notification_preferences SET whatsapp=0,push=0,email=0,updated_at=? WHERE user_id=? AND EXISTS(SELECT 1 FROM legal_consent_events WHERE id=?)",
+      ).bind(timestamp, c.get("user").id, id),
+    );
+    statements.push(
+      c.env.DB.prepare(
+        "UPDATE push_devices SET revoked_at=?,updated_at=? WHERE user_id=? AND revoked_at IS NULL AND EXISTS(SELECT 1 FROM legal_consent_events WHERE id=?)",
+      ).bind(timestamp, timestamp, c.get("user").id, id),
+    );
+  }
+  const results = await c.env.DB.batch(statements);
   if (results[0]?.meta.changes !== 1)
     return c.json(
       {

@@ -1,6 +1,40 @@
 # D1 to PostgreSQL Portability Contract
 
-Target architecture: domain services use repository interfaces and portable values. Current status on 2026-10-13: the active Hono routes still use D1 statements and Cloudflare storage/queue types directly. The older NestJS/PostgreSQL stack is not a behavior-equivalent replacement. The adapter separation and PostgreSQL parity work remain unfinished; no Docker cutover has occurred.
+Target architecture: domain services use repository interfaces and portable values. Current status on 2026-10-13: catalogue and public effective-policy reads are extracted to `@lex/platform-core`, with separate D1 and PostgreSQL policy adapters. Most authenticated Hono routes still use D1 statements and Cloudflare storage/queue types directly. The older NestJS/PostgreSQL stack is not a behavior-equivalent replacement. Full adapter separation and PostgreSQL parity remain unfinished; no client cutover has occurred.
+
+## Current executable slice
+
+`apps/node-api` uses Hono, `@hono/node-server` and parameterized `pg` repositories.
+`infra/compose.lex.yml` starts only new Lex PostgreSQL/migration/API containers,
+with no database host port and an API listener at loopback port 4180. Images run
+production builds as a non-root user with a read-only root filesystem. Passwords
+are mounted secrets, not committed environment values or image layers.
+
+Migration 0001 creates `lex.users`, legal documents and versions, with stable text
+IDs and immutable published-version triggers. Migrations are checksum-checked
+under one PostgreSQL transaction/advisory lock; applied migrations cannot silently
+change or disappear. Runtime public reads use a read-only connection. A separate
+least-privilege application role is still required before authenticated writes or
+external exposure; the foundation currently shares the local `lex` database role.
+
+Health declares `migrationStage: public-read-port` and `cutoverReady: false`.
+There is no automatic fallback proxy to Cloudflare. The catalogue and policy
+queries have tests; other routes are explicitly unmigrated, and no existing mobile
+or web endpoint has been changed to this slice.
+
+`scripts/lex-docker-backup.mjs` encrypts streamed custom-format `pg_dump` output
+with AES-256-GCM, stores a ciphertext checksum manifest and authenticates the full
+archive before restoring into a new `lex_test_restore_*` database. The source
+database is never overwritten; restore receipts and isolated databases are retained.
+The key must be backed up separately. This is not yet an automated nightly or
+independent off-machine backup, and does not include evidence objects.
+
+The first restore contained one migration and zero users/documents/versions.
+Real PostgreSQL contract tests separately create synthetic documents in a rolled-back
+transaction and verify effective-version/language/private-draft isolation and
+immutability. Neither check establishes full D1 migration or production recovery.
+
+## Remaining migration contract
 
 | Domain value                  | D1 representation                          | PostgreSQL target               |
 | ----------------------------- | ------------------------------------------ | ------------------------------- |

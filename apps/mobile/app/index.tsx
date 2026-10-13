@@ -180,7 +180,17 @@ type LegalDocument = {
   version: number;
   status: string;
   content_markdown: string;
+  language: Language;
+  acceptance_kind:
+    "agreement" | "acknowledgement" | "optional_consent" | "notice";
   company_placeholder_present: number;
+};
+type LegalConsent = {
+  id: string;
+  document_code: string;
+  document_version_id: string;
+  kind: "accepted" | "acknowledged" | "withdrawn";
+  occurred_at: string;
 };
 
 const COUNTRY_CODES: CountryCode[] = [
@@ -268,7 +278,14 @@ const title = (value: string) =>
 export default function LexApp() {
   const [session, setSession] = useState<Session | null | undefined>();
   const [screen, setScreen] = useState<
-    "home" | "intake" | "matter" | "settings" | "privacy" | "ask" | "legal"
+    | "home"
+    | "intake"
+    | "matter"
+    | "settings"
+    | "privacy"
+    | "ask"
+    | "ask-consent"
+    | "legal"
   >("home");
   const [language, setLanguage] = useState<Language>("en");
   const [role, setRole] = useState<Role>("tenant");
@@ -323,6 +340,8 @@ export default function LexApp() {
   );
   const [aiMessage, setAiMessage] = useState("");
   const [legalDocuments, setLegalDocuments] = useState<LegalDocument[]>([]);
+  const [legalConsents, setLegalConsents] = useState<LegalConsent[]>([]);
+  const [aiConsentDocument, setAiConsentDocument] = useState<LegalDocument>();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -1003,6 +1022,33 @@ export default function LexApp() {
   async function openAskLex() {
     if (!session) return;
     await run(async () => {
+      const policies = await api<{ items: LegalDocument[] }>(
+        "/legal/documents?language=en",
+      );
+      setAiConsentDocument(
+        policies.items.find((item) => item.code === "ai-routing-disclosure"),
+      );
+      setScreen("ask-consent");
+    });
+  }
+
+  async function beginAskLex() {
+    if (!session) return;
+    await run(async () => {
+      if (aiConsentDocument)
+        await api(
+          "/legal/acceptances",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              documentVersionId: aiConsentDocument.version_id,
+              language: aiConsentDocument.language,
+              channel: "mobile",
+              accepted: true,
+            }),
+          },
+          session.accessToken,
+        );
       const created = await api<AiConversation>(
         "/ai/intake-sessions",
         {
@@ -1011,7 +1057,9 @@ export default function LexApp() {
             channel: "mobile",
             language,
             aiDisclosureAccepted: true,
-            aiDisclosureVersion: "ai-routing-disclosure-en-v1-staging-draft",
+            aiDisclosureVersion:
+              aiConsentDocument?.version_id ??
+              "ai-routing-disclosure-en-v1-staging-draft",
           }),
         },
         session.accessToken,
@@ -1109,15 +1157,50 @@ export default function LexApp() {
   }
 
   async function openLegalCentre() {
-    if (!session) return;
     await run(async () => {
       const result = await api<{ items: LegalDocument[] }>(
         `/legal/documents?language=${language}`,
         {},
-        session.accessToken,
+        session?.accessToken,
       );
       setLegalDocuments(result.items);
+      const consents = session
+        ? await api<{ items: LegalConsent[] }>(
+            "/legal/acceptances",
+            {},
+            session.accessToken,
+          )
+        : { items: [] };
+      setLegalConsents(consents.items);
       setScreen("legal");
+    });
+  }
+
+  async function updateLegalConsent(
+    document: LegalDocument,
+    withdraw: boolean,
+  ) {
+    if (!session) return;
+    await run(async () => {
+      await api(
+        withdraw ? "/legal/withdrawals" : "/legal/acceptances",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            documentVersionId: document.version_id,
+            language: document.language,
+            channel: "mobile",
+            ...(!withdraw ? { accepted: true } : {}),
+          }),
+        },
+        session.accessToken,
+      );
+      const consents = await api<{ items: LegalConsent[] }>(
+        "/legal/acceptances",
+        {},
+        session.accessToken,
+      );
+      setLegalConsents(consents.items);
     });
   }
 
@@ -1126,6 +1209,18 @@ export default function LexApp() {
       <View style={styles.loading}>
         <ActivityIndicator color="#1e6248" />
       </View>
+    );
+  if (screen === "legal")
+    return (
+      <LegalCentre
+        documents={legalDocuments}
+        consents={legalConsents}
+        signedIn={Boolean(session)}
+        busy={busy}
+        notice={notice}
+        update={updateLegalConsent}
+        back={() => setScreen("home")}
+      />
     );
   if (!session)
     return (
@@ -1143,6 +1238,7 @@ export default function LexApp() {
         notice={notice}
         requestOtp={requestOtp}
         verifyOtp={verifyOtp}
+        openLegalCentre={openLegalCentre}
         useStagingTestNumber={() => {
           setCountry(COUNTRY_CODES[0]!);
           setNationalNumber(STAGING_TEST_PHONE.slice(4));
@@ -1229,6 +1325,42 @@ export default function LexApp() {
         submit={createPrivacyRequest}
       />
     );
+  if (screen === "ask-consent")
+    return (
+      <Shell back={() => setScreen("home")} title="Before using Ask Lex">
+        <Card>
+          <Text style={styles.heading}>Optional AI-assisted intake</Text>
+          <Text style={styles.body}>
+            Lex can use an external AI service to organize the facts you provide
+            and suggest a legal category. This is not legal advice. Review and
+            correct every suggestion before sharing it with a lawyer. Avoid
+            unnecessary sensitive details.
+          </Text>
+          <Text style={styles.body}>
+            You can use the ordinary intake form instead. If AI is unavailable,
+            a guided questionnaire remains available. You can withdraw optional
+            consent through the Legal Centre; this stops future processing, but
+            cannot recall information already sent.
+          </Text>
+          {aiConsentDocument ? (
+            <Text style={styles.legalText}>
+              {aiConsentDocument.content_markdown}
+            </Text>
+          ) : null}
+          <Button
+            label="I agree — continue to Ask Lex"
+            onPress={beginAskLex}
+            busy={busy}
+          />
+          <Button
+            secondary
+            label="Use the ordinary intake form"
+            onPress={() => setScreen("home")}
+          />
+          {notice ? <Notice text={notice} /> : null}
+        </Card>
+      </Shell>
+    );
   if (screen === "ask" && aiConversation)
     return (
       <AskLex
@@ -1244,10 +1376,6 @@ export default function LexApp() {
         challenge={() => requestAiHumanReview("challenge")}
         humanReview={() => requestAiHumanReview("human-review")}
       />
-    );
-  if (screen === "legal")
-    return (
-      <LegalCentre documents={legalDocuments} back={() => setScreen("home")} />
     );
   return (
     <Home
@@ -1302,6 +1430,7 @@ function Auth(props: {
   requestOtp: () => void;
   verifyOtp: () => void;
   useStagingTestNumber: () => void;
+  openLegalCentre: () => void;
   resetChallenge: () => void;
 }) {
   const words = copy[props.language];
@@ -1407,6 +1536,12 @@ function Auth(props: {
                 />
               </>
             )}
+            <Button
+              secondary
+              label="Read terms and privacy notices"
+              onPress={props.openLegalCentre}
+              busy={props.busy}
+            />
             {props.notice ? <Notice text={props.notice} /> : null}
           </Card>
         </ScrollView>
@@ -1887,9 +2022,12 @@ function AskLex(props: {
           Explain the issue in your own words.
         </Text>
         <Text style={styles.bodyLight}>
-          Powered by OpenAI in this test release. Lex organizes facts and
-          suggests a category; it does not give legal advice. You must confirm
-          any AI-organized information before lawyer sharing.
+          {props.conversation.provider === "openai"
+            ? "Powered by OpenAI in this test release. "
+            : "Guided questionnaire; external AI is not being used for this enquiry. "}
+          Lex organizes facts and suggests a category; it does not give legal
+          advice. You must confirm any AI-organized information before lawyer
+          sharing.
         </Text>
       </Card>
       <View style={styles.statusRow}>
@@ -1965,8 +2103,28 @@ function AskLex(props: {
   );
 }
 
-function LegalCentre(props: { documents: LegalDocument[]; back: () => void }) {
+function LegalCentre(props: {
+  documents: LegalDocument[];
+  consents: LegalConsent[];
+  signedIn: boolean;
+  busy: boolean;
+  notice: string;
+  update: (document: LegalDocument, withdraw: boolean) => void;
+  back: () => void;
+}) {
   const [openDocument, setOpenDocument] = useState<string>();
+  const latestPurpose = (code: string) =>
+    props.consents.filter((event) => event.document_code === code).at(-1);
+  const latest = (id: string) => {
+    const document = props.documents.find((item) => item.version_id === id);
+    const purpose = document && latestPurpose(document.code);
+    return document?.acceptance_kind === "optional_consent" &&
+      purpose?.kind === "withdrawn"
+      ? purpose
+      : props.consents
+          .filter((event) => event.document_version_id === id)
+          .at(-1);
+  };
   return (
     <Shell back={props.back} title="Legal centre">
       <Card dark>
@@ -1998,8 +2156,50 @@ function LegalCentre(props: { documents: LegalDocument[]; back: () => void }) {
             <Notice text="Parent-company details and legal approval are still required before production publication." />
           ) : null}
           <Text style={styles.legalText}>{document.content_markdown}</Text>
+          {latest(document.version_id) ? (
+            <Text style={styles.meta}>
+              {title(latest(document.version_id)!.kind)} ·{" "}
+              {new Date(
+                latest(document.version_id)!.occurred_at,
+              ).toLocaleDateString()}
+            </Text>
+          ) : null}
+          {props.signedIn &&
+          document.acceptance_kind !== "notice" &&
+          !["accepted", "acknowledged"].includes(
+            latest(document.version_id)?.kind ?? "",
+          ) ? (
+            <Button
+              label={
+                document.acceptance_kind === "acknowledgement"
+                  ? "I acknowledge this notice"
+                  : document.acceptance_kind === "optional_consent"
+                    ? "I consent to this optional processing"
+                    : "I agree to these terms"
+              }
+              busy={props.busy}
+              onPress={() => props.update(document, false)}
+            />
+          ) : null}
+          {document.acceptance_kind === "optional_consent" &&
+          latestPurpose(document.code)?.kind === "accepted" ? (
+            <>
+              <Text style={styles.body}>
+                Withdrawal applies across your account. It does not cancel an
+                engagement or remove its records. Typed intake and in-app access
+                remain available.
+              </Text>
+              <Button
+                secondary
+                label="Withdraw optional consent"
+                busy={props.busy}
+                onPress={() => props.update(document, true)}
+              />
+            </>
+          ) : null}
         </AccordionSection>
       ))}
+      {props.notice ? <Notice text={props.notice} /> : null}
     </Shell>
   );
 }

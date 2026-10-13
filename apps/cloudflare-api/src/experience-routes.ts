@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import { optionalProcessingAllowed } from "@lex/d1";
 import {
   aiIntakeConfirmationSchema,
   aiIntakeMessageSchema,
@@ -462,17 +463,23 @@ routes.post(
     const input = context.req.valid("json");
     const id = crypto.randomUUID();
     const timestamp = now();
+    const aiAllowed = await optionalProcessingAllowed(
+      context.env.DB,
+      user.id,
+      "ai-routing-disclosure",
+    );
     await context.env.DB.batch([
       context.env.DB.prepare(
         `INSERT INTO channel_conversations
          (id,user_id,channel,language,state,ai_disclosure_version,ai_enabled,version,created_at,updated_at)
-         VALUES (?,?,?,?,'active',?,1,1,?,?)`,
+         VALUES (?,?,?,?,'active',?,?,1,?,?)`,
       ).bind(
         id,
         user.id,
         input.channel,
         input.language,
         input.aiDisclosureVersion,
+        aiAllowed ? 1 : 0,
         timestamp,
         timestamp,
       ),
@@ -491,9 +498,10 @@ routes.post(
       {
         id,
         state: "active",
-        provider: isOpenAIConfigured(context.env)
-          ? "openai"
-          : "deterministic_fallback",
+        provider:
+          aiAllowed && isOpenAIConfigured(context.env)
+            ? "openai"
+            : "deterministic_fallback",
         disclosureVersion: input.aiDisclosureVersion,
       },
       201,
@@ -515,7 +523,21 @@ routes.get("/ai/intake-sessions/:id", async (context) => {
   )
     .bind(conversation.id)
     .all();
-  return context.json({ ...conversation, turns: turns.results });
+  const aiAllowed =
+    conversation.ai_enabled === 1 &&
+    (await optionalProcessingAllowed(
+      context.env.DB,
+      user.id,
+      "ai-routing-disclosure",
+    ));
+  return context.json({
+    ...conversation,
+    turns: turns.results,
+    provider:
+      aiAllowed && isOpenAIConfigured(context.env)
+        ? "openai"
+        : "deterministic_fallback",
+  });
 });
 
 routes.post(
@@ -903,7 +925,7 @@ async function ownedConversation(
   userId: string,
 ) {
   return env.DB.prepare(
-    "SELECT id,user_id,channel,language,state,classification_json,version,created_at,updated_at FROM channel_conversations WHERE id=? AND user_id=?",
+    "SELECT id,user_id,channel,language,state,classification_json,version,ai_enabled,created_at,updated_at FROM channel_conversations WHERE id=? AND user_id=?",
   )
     .bind(id ?? "", userId)
     .first<{
@@ -913,6 +935,7 @@ async function ownedConversation(
       language: string;
       state: string;
       classification_json: string | null;
+      ai_enabled: number;
       version: number;
       created_at: string;
       updated_at: string;

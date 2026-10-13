@@ -2,7 +2,20 @@
 
 ## 2026-10-13 production preparation (in progress)
 
-The approved update is recorded in the existing MVP plan. Earlier evidence below is historical, not current provider or production verification. Corporate roles and current registration details have been owner-confirmed. The owner selected icon 2, conversation/scales; Android/iOS/web/store-size exports are integrated in source. Twenty substantive documents and the version-bound, MFA-protected Owner review UI/API are implemented, with public policies separated from private drafts. Private invitation handoff works independently of email; Postmark remains unconfigured and no partner invitation has been sent. Store signing inputs are prepared, not supplied. Docker Engine responds locally, but the current Hono/PostgreSQL port, migration rehearsal and Docker deployment remain unfinished. See TEST_REPORT for actual checks and deployment evidence; this increment is not public-release approval.
+The approved update is recorded in the existing MVP plan. Earlier evidence below is historical, not current provider or production verification. Corporate roles and current registration details have been owner-confirmed. Icon 2, conversation/scales, is integrated in source. Twenty substantive documents and the version-bound, MFA-protected Owner review UI/API are implemented; public policies remain separated from unapproved drafts. Private invitation handoff works independently of email; Postmark remains unconfigured and no partner invitation has been sent. Store signing inputs are prepared, not supplied.
+
+The continuation now runs a first Node/Hono/PostgreSQL slice in an isolated local Docker deployment. It serves catalogue/public-policy reads and explicitly reports that it is not ready for cutover. Cloudflare remains the working app backend. Mobile/web consent controls and AI/notification withdrawal enforcement are implemented; required agreement entry points and device/provider verification remain unfinished. See TEST_REPORT for exact deployment evidence; this increment is not public-release approval.
+
+| Current continuation | Status | Evidence / remaining work |
+| --- | --- | --- |
+| Runtime-neutral catalogue/public-policy services | local_verified | D1/PostgreSQL adapters, 4 shared/Node tests and API regression tests |
+| New `lex-docker` production-build images | local_verified | Loopback API, private PostgreSQL network, secret files, non-root/read-only API; no client cutover |
+| PostgreSQL migration and immutable public content | local_verified | Checksummed transactional migration; 9 real-PostgreSQL contract checks with rolled-back fixtures |
+| Encrypted PostgreSQL backup/isolated restore | local_verified | AES-GCM authentication, retained isolated restore and count receipt; empty foundation only |
+| Full Docker behavior / D1-R2 migration | not_started beyond first slice | Auth, matters, payments, queue/storage/realtime port, full graph import and rollback still required |
+| Consent UI and account-wide optional withdrawal | local_verified | Explicit Ask Lex choice, public mobile policies, web/mobile decisions, cross-channel/version tests and queued fallback |
+| Mandatory service/representation acceptances | implemented_unverified | Ledger exists; integration into every required entry point remains unfinished |
+| Actual provider / partner / store completion | unchanged | No new provider execution, partner approval, signing or store upload in this continuation |
 
 ## 2026-08-11 experience increment
 

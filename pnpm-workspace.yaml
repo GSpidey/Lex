@@ -25,3 +25,4 @@ onlyBuiltDependencies:
 
 minimumReleaseAgeExclude:
   - "@cloudflare/workers-types@5.20260809.1"
+  - '@hono/node-server@2.1.5'

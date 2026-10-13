@@ -26,7 +26,10 @@
     "cf:dry-run": "pnpm --filter @lex/cloudflare-api deploy:dry && pnpm --filter @lex/cloudflare-jobs deploy:dry && pnpm --filter @lex/cloudflare-realtime deploy:dry && pnpm --filter @lex/cloudflare-web deploy:dry",
     "cf:check": "pnpm cf:types && pnpm typecheck && pnpm test && pnpm cf:dry-run",
     "staging:bootstrap-founders": "node scripts/bootstrap-founders.mjs",
-    "staging:openai-smoke": "node scripts/openai-staging-smoke.mjs"
+    "staging:openai-smoke": "node scripts/openai-staging-smoke.mjs",
+    "docker:init": "node scripts/init-lex-docker.mjs",
+    "docker:up": "docker compose -f infra/compose.lex.yml up -d --build",
+    "docker:check": "docker compose -f infra/compose.lex.yml exec -T api node dist/postgres-test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

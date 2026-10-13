@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { optionalProcessingAllowed } from "@lex/d1";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import {
@@ -456,7 +457,14 @@ routes.post("/intakes/:id/summarize", async (context) => {
       intake.version,
     )
     .run();
-  if (context.env.OPENAI_API_KEY)
+  if (
+    context.env.OPENAI_API_KEY &&
+    (await optionalProcessingAllowed(
+      context.env.DB,
+      user.id,
+      "ai-routing-disclosure",
+    ))
+  )
     await recordJobBeforePublish(context.env, {
       kind: "ai_intake_extraction",
       queueName: "jobs",
@@ -732,6 +740,21 @@ routes.post(
       .first();
     if (!evidence)
       return context.json({ message: "Audio evidence not found" }, 404);
+    if (
+      !(await optionalProcessingAllowed(
+        context.env.DB,
+        user.id,
+        "ai-routing-disclosure",
+      ))
+    )
+      return context.json(
+        {
+          code: "AI_CONSENT_WITHDRAWN",
+          message:
+            "AI processing is turned off. Type your information instead, or review your choice in the Legal Centre.",
+        },
+        409,
+      );
     if (!context.env.OPENAI_API_KEY)
       return context.json(
         {
@@ -1084,6 +1107,21 @@ routes.put(
     const user = context.get("user");
     if (input.email && context.env.EMAIL_DELIVERY_ENABLED !== "true")
       return context.json({ message: "Email delivery is not configured" }, 422);
+    if (
+      (input.whatsapp || input.push || input.email) &&
+      !(await optionalProcessingAllowed(
+        context.env.DB,
+        user.id,
+        "electronic-communications",
+      ))
+    )
+      return context.json(
+        {
+          message:
+            "Review and enable optional communications in the Legal Centre before choosing delivery channels.",
+        },
+        409,
+      );
     await context.env.DB.prepare(
       "INSERT INTO notification_preferences (user_id,whatsapp,push,email,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET whatsapp=excluded.whatsapp,push=excluded.push,email=excluded.email,updated_at=excluded.updated_at",
     )
@@ -1106,6 +1144,20 @@ routes.post(
     const user = context.get("user");
     const tokenHash = await sha256(input.token);
     const timestamp = now();
+    if (
+      !(await optionalProcessingAllowed(
+        context.env.DB,
+        user.id,
+        "electronic-communications",
+      ))
+    )
+      return context.json(
+        {
+          message:
+            "Optional communications are turned off. Review your choice in the Legal Centre before registering notifications.",
+        },
+        409,
+      );
     await context.env.DB.prepare(
       "INSERT INTO push_devices (id,user_id,token_hash,token_encrypted,platform,consent_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(token_hash) DO UPDATE SET user_id=excluded.user_id,token_encrypted=excluded.token_encrypted,consent_at=excluded.consent_at,revoked_at=NULL,updated_at=excluded.updated_at",
     )

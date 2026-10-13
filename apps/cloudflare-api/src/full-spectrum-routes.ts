@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import { practiceAreaCatalogue, serviceCatalogue } from "@lex/platform-core";
 import {
   acceptRepresentationProposalSchema,
   classificationConfirmationSchema,
@@ -29,45 +30,11 @@ import type { Env, Variables } from "./types.js";
 const routes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 routes.get("/catalog/practice-areas", (context) => {
-  const query = (context.req.query("q") ?? "").trim().toLowerCase();
-  const items = PRACTICE_AREAS.filter(
-    (item) =>
-      !query ||
-      [item.name, item.group, item.description, ...item.keywords].some(
-        (value) => value.toLowerCase().includes(query),
-      ),
-  );
-  const groups = [...new Set(items.map((item) => item.group))].map((group) => ({
-    group,
-    items: items.filter((item) => item.group === group),
-  }));
-  return context.json({
-    countryCode: "NG",
-    stagingAvailability: "nationwide",
-    count: items.length,
-    groups,
-  });
+  return context.json(practiceAreaCatalogue(context.req.query("q")));
 });
 
 routes.get("/catalog/services", (context) => {
-  const code = context.req.query("practiceAreaCode");
-  const areas = code
-    ? PRACTICE_AREAS.filter((item) => item.code === code)
-    : PRACTICE_AREAS;
-  return context.json(
-    areas.map((item) => ({
-      ...serviceForPracticeArea(item.code),
-      jurisdiction: {
-        countryCode: "NG",
-        states: NIGERIA_STATES.map(([stateCode, name]) => ({
-          stateCode,
-          name,
-          status: "active",
-        })),
-      },
-      syntheticStagingOnly: true,
-    })),
-  );
+  return context.json(serviceCatalogue(context.req.query("practiceAreaCode")));
 });
 
 routes.post(

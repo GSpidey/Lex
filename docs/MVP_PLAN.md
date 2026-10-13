@@ -18,6 +18,14 @@ Email the partner's already-authorized private address only when a working authe
 
 Domain purchase is owner-operated later; retain temporary Lex URLs. No public release, store upload, new server purchase, production payment or unrelated-resource mutation is authorized by this preparation.
 
+### Continuation progress — same plan
+
+- Shared catalogue and public-policy services now run through D1 and PostgreSQL adapters. The isolated Node Docker deployment is a first read-only slice; it is not a client endpoint cutover.
+- PostgreSQL migrations use checksums, one transaction and an advisory lock. Synthetic contract fixtures roll back instead of resetting data. Encrypted backup/isolated restore tooling is implemented; the first restore covers an empty legal-schema foundation, not the complete D1/R2 graph.
+- Mobile policies are accessible before sign-in. Signed-in app/web users can record document-specific decisions and withdraw optional processing. Ask Lex has an explicit disclosure/choice before external AI. Withdrawal is checked again in queued AI and notification work; typed intake, authentication and in-app access remain available.
+- Required agreements at every consultation/representation entry point, version-aware multilingual copy review, full authenticated UI/device testing and provider delivery remain unfinished. Existing contextual synthetic-staging consent is preserved when no formal document decision exists; this is not production consent completion.
+- Continue independent implementation while provider login, partner signing and legal/store choices await the owner. Never interpret silence as legal, financial or release approval.
+
 ## Product contract
 
 Lex provides nationwide Nigerian intake and synthetic service testing across a granular catalogue of legal practice areas. The common lifecycle is intake, client confirmation, safety review where necessary, eligibility-based matching, lawyer conflict clearance, sandbox payment, consultation, lawyer-attested assessment, and optional separately accepted representation tracking.
